@@ -220,6 +220,45 @@ async def get_synthesis(run_id: str):
     return {"status": "complete", "result": synthesis}
 
 
+class LLMAnalysisRequest(BaseModel):
+    idea: str               # e.g. "Title: What to build description"
+    tinyfish_report: str     # raw TinyFish agent result (stringified)
+
+
+@app.post("/analyse-idea")
+async def analyse_idea(body: LLMAnalysisRequest):
+    """Run the Brutal VC Partner LLM analysis on a TinyFish research report.
+    Called once per idea during the iteration phase. Returns a structured
+    JSON verdict across 6 metrics."""
+    logger.info("LLM analysis requested for idea: %s", body.idea[:80])
+
+    # Fill in the idea name in the system prompt
+    system_prompt = LLM_ITERATION_SYSTEM_PROMPT.replace("{idea}", body.idea)
+
+    try:
+        response = await openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": body.tinyfish_report},
+            ],
+            temperature=0.4,
+        )
+        raw = response.choices[0].message.content.strip()
+
+        # Strip markdown code fences if the model wraps the JSON
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1]
+            raw = raw.rsplit("```", 1)[0]
+
+        analysis = json.loads(raw)
+        logger.info("LLM analysis complete for idea: %s", body.idea[:80])
+        return {"status": "complete", "analysis": analysis}
+    except Exception as exc:
+        logger.exception("LLM analysis failed for idea: %s", body.idea[:80])
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/runs/{run_id}/synthesise")
 async def force_synthesise(run_id: str):
     """Trigger synthesis immediately with whatever agent results are available.

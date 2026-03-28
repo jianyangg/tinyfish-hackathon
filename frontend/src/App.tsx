@@ -138,6 +138,7 @@ export default function App() {
   const [runId, setRunId] = useState("");
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [phase, setPhase] = useState<"discovery" | "iteration">("discovery");
+  const [iterationIdeas, setIterationIdeas] = useState<IdeaData[]>([]);
 
   async function handleLaunch(e?: FormEvent) {
     if (e) e.preventDefault();
@@ -174,12 +175,11 @@ export default function App() {
   }
 
   // ── Iteration handler ──────────────────────────────────────────────────────
-  // Fetches the prompt template from the backend (single source of truth),
-  // builds one task per idea, and creates a new run with auto_synthesise=false.
+  // Called automatically when synthesis produces ideas. Fetches the prompt
+  // template, builds tasks, and transitions directly to the iteration dashboard
+  // (no intermediate loading screen — the ideas slide into the sidebar).
   async function handleIterate(ideas: IdeaData[]) {
-    setPhase("iteration");
-    setView("loading");
-    setLoadingStep("spawning");
+    setIterationIdeas(ideas);
 
     try {
       // Fetch the iteration prompt template from the backend so prompts
@@ -207,8 +207,7 @@ export default function App() {
       const data = await res.json();
       setRunId(data.run_id);
       setAgents(data.agents);
-
-      await new Promise((r) => setTimeout(r, 800));
+      setPhase("iteration");
       setView("dashboard");
       setLoadingStep(null);
     } catch (err) {
@@ -230,6 +229,7 @@ export default function App() {
         phase={phase}
         onBack={() => { setView("prompt"); setPhase("discovery"); }}
         onIterate={handleIterate}
+        iterationIdeas={phase === "iteration" ? iterationIdeas : undefined}
       />
     );
   }
@@ -238,32 +238,32 @@ export default function App() {
   if (view === "loading") {
     return (
       <div className="page">
-        <header className="wordmark">
-          <GrassIcon />
-          <span>grasstoucher</span>
-        </header>
+      <header className="wordmark">
+        <YCIcon />
+        <span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span>
+      </header>
 
         <main className="center">
           <div className="loading-sequence">
             {phase === "discovery" ? (
               <>
                 <LoadingStepIndicator
-                  label="Analyzing prompt"
-                  detail="Breaking your prompt into focused research tasks…"
+                  label="Channeling Paul Graham"
+                  detail="Scraping every YC wishlist ever published…"
                   active={loadingStep === "decomposing"}
                   done={loadingStep === "spawning"}
                 />
                 <LoadingStepIndicator
-                  label="Spawning agents"
-                  detail="Launching parallel browser sessions…"
+                  label="Spawning VC Interns"
+                  detail="Launching AI agents to do the dirty work…"
                   active={loadingStep === "spawning"}
                   done={false}
                 />
               </>
             ) : (
               <LoadingStepIndicator
-                label="Spawning research agents"
-                detail="Launching market research for each draft idea…"
+                label="Building Minimum Viable Scrapers"
+                detail="Forcing agents to validate these ideas on Twitter…"
                 active={loadingStep === "spawning"}
                 done={false}
               />
@@ -278,16 +278,31 @@ export default function App() {
   return (
     <div className="page">
       <header className="wordmark">
-        <GrassIcon />
-        <span>grasstoucher</span>
+        <YCIcon />
+        <span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span>
       </header>
 
       <main className="center">
-        <p className="tagline">What do investors want built right now?</p>
+        <div className="hero-content">
+          <div className="hero-badge">
+            <span className="badge-dot" />
+            <span>YC Hackathon Edition</span>
+          </div>
 
-        <button className="send-btn launch-btn" onClick={handleLaunch} aria-label="Launch">
-          <ArrowIcon />
-        </button>
+          <h1 className="tagline">
+            Stop touching grass.<br />
+            <span className="text-gradient">Let Paul Graham hack your brain.</span>
+          </h1>
+
+          <p className="hero-subtitle">
+            An autonomous ideation engine that scrapes VC wishlists, validates market demand, and synthesizes billion-dollar startup concepts in seconds.
+          </p>
+
+          <button className="launch-btn-modern" onClick={handleLaunch} aria-label="Begin Synthesis">
+            Begin Synthesis
+            <ArrowIcon />
+          </button>
+        </div>
       </main>
     </div>
   );
@@ -327,20 +342,18 @@ function LoadingStepIndicator({
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
-export function GrassIcon() {
+export function YCIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M7 21 C7 21 5 16 6 10 C6 10 8 13 8 21Z" fill="#22C55E" />
-      <path d="M12 21 C12 21 10 13 12 4 C12 4 14 13 12 21Z" fill="#16A34A" />
-      <path d="M17 21 C17 21 16 16 18 10 C18 10 19 13 17 21Z" fill="#22C55E" />
-      <line x1="4" y1="21" x2="20" y2="21" stroke="#15803D" strokeWidth="1.5" strokeLinecap="round" />
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect width="24" height="24" rx="4" fill="#ff6701" />
+      <path d="M12.6,15 L12.6,20 L11.4,20 L11.4,15 L6.5,6 L8,6 L12,13.5 L16,6 L17.5,6 L12.6,15 Z" fill="#ffffff" />
     </svg>
   );
 }
 
 function ArrowIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--black)"
       strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <line x1="5" y1="12" x2="19" y2="12" />
       <polyline points="13 6 19 12 13 18" />

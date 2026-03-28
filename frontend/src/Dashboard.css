@@ -16,7 +16,7 @@
   gap: 12px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
-  background: #fff;
+  background: var(--black);
 }
 
 .back-btn {
@@ -125,13 +125,13 @@
   transition: background 0.15s, color 0.15s;
 }
 .layout-btn:hover {
-  background: #E8ECF4;
-  color: var(--ink);
+  background: var(--grey-dark);
+  color: var(--orange-light);
 }
 .layout-btn.active {
-  background: #fff;
-  color: var(--blue);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  background: var(--grey-dark);
+  color: var(--orange-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
 }
 
 /* ── Grid view ───────────────────────────────────────────────────── */
@@ -154,14 +154,14 @@
   border: 1.5px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
-  background: #fff;
+  background: var(--grey-dark);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
   min-height: 0;
 }
 .grid-cell:hover {
-  border-color: #C4D5F7;
-  box-shadow: 0 4px 16px rgba(59, 123, 248, 0.1);
+  border-color: var(--orange-light);
+  box-shadow: 0 4px 16px rgba(255, 103, 1, 0.1);
 }
 .grid-cell.running {
   border-color: var(--blue);
@@ -220,7 +220,7 @@
   gap: 8px;
   padding: 16px 12px;
   border-right: 1px solid var(--border);
-  background: #F7F8FA;
+  background: var(--black);
   overflow-y: auto;
 }
 
@@ -231,20 +231,20 @@
   padding: 14px 14px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--grey-dark);
   cursor: pointer;
   text-align: left;
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
   font-family: var(--font-body);
 }
 .agent-card:hover {
-  border-color: #C4D5F7;
-  box-shadow: 0 2px 8px rgba(59, 123, 248, 0.08);
+  border-color: var(--orange-light);
+  box-shadow: 0 2px 8px rgba(255, 103, 1, 0.08);
 }
 .agent-card.selected {
-  border-color: var(--blue);
-  background: #EEF3FE;
-  box-shadow: 0 2px 12px rgba(59, 123, 248, 0.12);
+  border-color: var(--orange-primary);
+  background: rgba(255, 103, 1, 0.1);
+  box-shadow: 0 2px 12px rgba(255, 103, 1, 0.12);
 }
 
 .agent-card-top {
@@ -257,6 +257,18 @@
   font-weight: 500;
   font-size: 14px;
   color: var(--ink);
+  /* Truncate long idea titles in the sidebar */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.idea-rank-badge {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 /* ── Status dot ──────────────────────────────────────────────────── */
@@ -266,9 +278,9 @@
   border-radius: 50%;
   flex-shrink: 0;
 }
-.status-dot.pending   { background: #D1D5DB; }
-.status-dot.running   { background: var(--blue); animation: pulse-dot 1.2s ease-in-out infinite; }
-.status-dot.complete  { background: #22C55E; }
+.status-dot.pending   { background: #555; }
+.status-dot.running   { background: var(--orange-primary); animation: pulse-dot 1.2s ease-in-out infinite; }
+.status-dot.complete  { background: var(--orange-light); }
 .status-dot.error     { background: #EF4444; }
 
 @keyframes pulse-dot {
@@ -303,7 +315,7 @@
   flex-grow: 0;
   min-height: 0;
   position: relative;
-  background: #fff;
+  background: var(--grey-dark);
 }
 
 /* ── Resize handle ───────────────────────────────────────────────── */
@@ -359,7 +371,7 @@
 }
 .completed-check {
   font-size: 36px;
-  color: #22C55E;
+  color: var(--orange-light);
   line-height: 1;
 }
 .completed-label {
@@ -427,6 +439,56 @@
 }
 .stream-separator.synthesis {
   color: var(--blue);
+}
+.stream-separator.llm-loading {
+  color: var(--blue);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+/* ── LLM Analysis report (in dark stream panel) ────────────────── */
+.llm-report {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.llm-metric {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.llm-metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.llm-metric-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #93C5FD;
+}
+
+.llm-metric-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--orange-light);
+  background: rgba(255, 103, 1, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.llm-metric-reasoning {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #D1D5DB;
+  margin: 0;
 }
 
 .stream-result {
@@ -609,11 +671,11 @@
 
 /* ── Idea card ───────────────────────────────────────────────────── */
 .idea-card {
-  background: #fff;
+  background: var(--grey-dark);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 .idea-card-header {

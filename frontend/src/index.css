@@ -5,15 +5,21 @@
 }
 
 :root {
-  --blue: #3B7BF8;
-  --blue-dark: #2563EB;
-  --ink: #0F1117;
-  --ink-muted: #6B7280;
-  --bg: #FAFAFA;
-  --border: #E5E7EB;
-  --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px var(--border);
-  --shadow-input-focus: 0 4px 16px rgba(59, 123, 248, 0.15), 0 0 0 1.5px var(--blue);
-  --radius-btn: 10px;
+  --orange-primary: #ff6701;
+  --orange-light: #fecb8b;
+  --black: #000000;
+  --grey-dark: #1f1f1f;
+  --white: #ffffff;
+
+  --blue: var(--orange-primary);
+  --blue-dark: #e65c00;
+  --bg: var(--black);
+  --ink: var(--white);
+  --ink-muted: #a1a1aa;
+  --border: var(--grey-dark);
+  --shadow-input: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--grey-dark);
+  --shadow-input-focus: 0 4px 16px rgba(255, 103, 1, 0.4), 0 0 0 1.5px var(--orange-light);
+  --radius-btn: 12px;
   --font-display: 'DM Serif Display', Georgia, serif;
   --font-body: 'DM Sans', system-ui, sans-serif;
 }

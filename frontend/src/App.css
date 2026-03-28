@@ -4,11 +4,13 @@
   flex-direction: column;
   min-height: 100svh;
   /* Faint grid texture for depth — avoids flat-white genericness */
+  background-color: var(--black);
   background-image:
+    radial-gradient(circle at 50% 0%, rgba(255, 103, 1, 0.15) 0%, rgba(0,0,0,0) 60%),
     linear-gradient(var(--border) 1px, transparent 1px),
     linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 48px 48px;
-  background-position: center center;
+  background-size: 100% 100%, 48px 48px, 48px 48px;
+  background-position: center top, center center, center center;
 }
 
 /* ── Wordmark ────────────────────────────────────────────────────── */
@@ -109,12 +111,12 @@
   justify-content: center;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
-  box-shadow: 0 2px 8px rgba(59, 123, 248, 0.35);
+  box-shadow: 0 2px 8px rgba(255, 103, 1, 0.35);
 }
 
 .send-btn:hover {
   background: var(--blue-dark);
-  box-shadow: 0 4px 16px rgba(59, 123, 248, 0.45);
+  box-shadow: 0 4px 16px rgba(255, 103, 1, 0.45);
 }
 
 .send-btn:active {
@@ -123,10 +125,17 @@
 
 /* Standalone launch button on the landing page (no text input) */
 .launch-btn {
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
-  box-shadow: 0 4px 20px rgba(59, 123, 248, 0.4);
+  box-shadow: 0 4px 20px rgba(255, 103, 1, 0.5);
+  background: linear-gradient(135deg, var(--orange-primary), var(--orange-light));
+  color: var(--black);
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.launch-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 30px rgba(255, 103, 1, 0.7);
 }
 
 .send-btn:focus-visible {
@@ -172,9 +181,9 @@
 }
 
 .checkmark {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
-  color: #22C55E;
+  color: var(--orange-light);
 }
 
 .loading-step-text {

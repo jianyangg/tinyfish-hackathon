@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { GrassIcon, type AgentConfig } from "./App";
+import { YCIcon, type AgentConfig } from "./App";
 import "./Dashboard.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -21,6 +21,25 @@ interface AgentState {
   result: unknown | null;
 }
 
+// Structured LLM analysis returned by POST /api/analyse-idea
+interface LLMMetric {
+  score?: number;
+  verdict?: string;
+  risk?: string;
+  annual_revenue_1pct?: string;
+  proposed_model?: string;
+  reasoning: string;
+}
+
+interface LLMAnalysis {
+  desperation_score: LLMMetric;
+  ghost_town_check: LLMMetric;
+  buildability: LLMMetric;
+  kill_factor: LLMMetric;
+  the_prize_tam: LLMMetric;
+  sustainability: LLMMetric;
+}
+
 interface DashboardProps {
   runId: string;
   agents: AgentConfig[];
@@ -28,11 +47,14 @@ interface DashboardProps {
   phase: "discovery" | "iteration";
   onBack: () => void;
   onIterate?: (ideas: IdeaData[]) => void;
+  // When in iteration phase, the original ideas are passed back so the sidebar
+  // can show compact idea cards instead of raw agent goals.
+  iterationIdeas?: IdeaData[];
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function Dashboard({ runId, agents, prompt, phase, onBack, onIterate }: DashboardProps) {
+export default function Dashboard({ runId, agents, prompt, phase, onBack, onIterate, iterationIdeas }: DashboardProps) {
   const [agentStates, setAgentStates] = useState<AgentState[]>(() =>
     agents.map((a, i) => ({
       id: i, url: a.url, goal: a.goal,
@@ -45,6 +67,10 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
   const [view, setView] = useState<"agents" | "synthesis">("agents");
   // "focus" = sidebar + single agent detail; "grid" = all agents in a grid
   const [layout, setLayout] = useState<"focus" | "grid">("focus");
+
+  // Per-agent LLM analysis results (iteration phase only).
+  // Keyed by agent id. Each entry is null (pending), "loading", or the parsed analysis object.
+  const [llmReports, setLlmReports] = useState<Record<number, LLMAnalysis | "loading" | null>>({});
 
   const [splitPct, setSplitPct] = useState(65);
   const rightPanelRef = useRef<HTMLElement>(null);
@@ -125,6 +151,46 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     }
   }, [agentStates, phase]);
 
+  // Auto-trigger LLM analysis when an iteration agent completes.
+  // Each completed agent's TinyFish result is sent to POST /api/analyse-idea,
+  // producing the Brutal VC Partner verdict alongside the raw research.
+  useEffect(() => {
+    if (phase !== "iteration") return;
+
+    for (const agent of agentStates) {
+      // Only fire once per agent: when it first reaches "complete" with a result,
+      // and we haven't already started an analysis for it.
+      if (agent.status !== "complete" || !agent.result) continue;
+      if (llmReports[agent.id] !== undefined) continue;
+
+      // Mark as loading so we don't re-trigger
+      setLlmReports((prev) => ({ ...prev, [agent.id]: "loading" }));
+
+      // Extract the idea name from the agent's goal (after "startup idea: ")
+      const ideaMatch = agent.goal.match(/startup idea:\s*(.+?),\s*find/i);
+      const idea = ideaMatch ? ideaMatch[1] : `Agent ${agent.id + 1}`;
+
+      fetch("/api/analyse-idea", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idea,
+          tinyfish_report: typeof agent.result === "string"
+            ? agent.result
+            : JSON.stringify(agent.result, null, 2),
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          setLlmReports((prev) => ({ ...prev, [agent.id]: data.analysis }));
+        })
+        .catch((err) => {
+          console.error(`LLM analysis failed for agent ${agent.id}:`, err);
+          setLlmReports((prev) => ({ ...prev, [agent.id]: null }));
+        });
+    }
+  }, [agentStates, phase, llmReports]);
+
   // ── Drag-to-resize ────────────────────────────────────────────────────────
   const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -141,20 +207,37 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
 
   const onPointerUp = useCallback(() => { dragging.current = false; }, []);
 
-  // ── Synthesis view — shown automatically once discovery agents finish ──────
+  // Auto-trigger iteration once synthesis produces ideas (discovery phase only).
+  // This removes the manual "Research these ideas" step — the pipeline is fully
+  // automated from prompt → discovery agents → synthesis → iteration agents.
+  const synthesisTriggered = useRef(false);
+  useEffect(() => {
+    if (phase !== "discovery" || !synthesis || !onIterate || synthesisTriggered.current) return;
+
+    try {
+      const parsed = JSON.parse(synthesis);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        synthesisTriggered.current = true;
+        // Brief pause so the user sees "Synthesised" before the transition
+        setTimeout(() => onIterate(parsed as IdeaData[]), 1500);
+      }
+    } catch { /* parse error — will show in synthesis view below */ }
+  }, [synthesis, phase, onIterate]);
+
+  // ── Synthesis view — shown while waiting for synthesis or on parse error ───
   if (view === "synthesis") {
     return (
       <div className="dashboard">
         <header className="dashboard-header">
           <button className="back-btn" onClick={() => setView("agents")} aria-label="Back">←</button>
-          <div className="wordmark compact"><GrassIcon /><span>grasstoucher</span></div>
+          <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
           <p className="header-prompt synthesis-header-label">
-            {synthesis ? "Synthesised ideas" : "Synthesising…"}
+            {synthesis ? "Synthesised — launching research…" : "Synthesising…"}
           </p>
         </header>
         <div className="synthesis-full-panel">
           {synthesis ? (
-            <SynthesisView text={synthesis} phase={phase} onIterate={onIterate} />
+            <SynthesisView text={synthesis} phase={phase} />
           ) : (
             <SynthesisLoading />
           )}
@@ -177,7 +260,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
       {/* ── Header ── */}
       <header className="dashboard-header">
         <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
-        <div className="wordmark compact"><GrassIcon /><span>grasstoucher</span></div>
+        <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
         <p className="header-prompt" title={phase === "iteration" ? "Market Research" : prompt}>
           {phase === "iteration"
             ? "Market Research"
@@ -230,8 +313,23 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
               >
                 <div className="grid-cell-header">
                   <span className={`status-dot ${agent.status}`} />
-                  <span className="grid-cell-label">Agent {agent.id + 1}</span>
-                  <span className="grid-cell-goal">{agent.goal}</span>
+                  {(() => {
+                    const idea = iterationIdeas?.[agent.id];
+                    if (idea) {
+                      return (
+                        <>
+                          <span className="grid-cell-label">#{idea.rank} {idea.title}</span>
+                          <span className="grid-cell-goal">{idea.what_to_build}</span>
+                        </>
+                      );
+                    }
+                    return (
+                      <>
+                        <span className="grid-cell-label">Agent {agent.id + 1}</span>
+                        <span className="grid-cell-goal">{agent.goal}</span>
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="grid-cell-iframe">
                   {isCompleted ? (
@@ -263,19 +361,38 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
       {/* ── Focus view: Sidebar + Right panel ── */}
       {layout === "focus" && <>
         <aside className="sidebar">
-          {agentStates.map((agent) => (
-            <button
-              key={agent.id}
-              className={`agent-card ${selectedAgent === agent.id ? "selected" : ""}`}
-              onClick={() => setSelectedAgent(agent.id)}
-            >
-              <div className="agent-card-top">
-                <span className={`status-dot ${agent.status}`} />
-                <span className="agent-label">Agent {agent.id + 1}</span>
-              </div>
-              <p className="agent-goal">{agent.goal}</p>
-            </button>
-          ))}
+          {agentStates.map((agent) => {
+            // In iteration phase, show compact idea card if we have the original ideas
+            const idea = iterationIdeas?.[agent.id];
+            const rankColors = ["#ff6701", "#ff8c3a", "#ffa865", "#ffbe89", "#fecb8b", "#fcdba9", "#fae9c7", "#fef3e1"];
+
+            return (
+              <button
+                key={agent.id}
+                className={`agent-card ${selectedAgent === agent.id ? "selected" : ""}`}
+                onClick={() => setSelectedAgent(agent.id)}
+              >
+                <div className="agent-card-top">
+                  <span className={`status-dot ${agent.status}`} />
+                  {idea ? (
+                    <>
+                      <span className="idea-rank-badge" style={{ color: rankColors[idea.rank - 1] ?? "#fecb8b" }}>
+                        #{idea.rank}
+                      </span>
+                      <span className="agent-label">{idea.title}</span>
+                    </>
+                  ) : (
+                    <span className="agent-label">Agent {agent.id + 1}</span>
+                  )}
+                </div>
+                {idea ? (
+                  <p className="agent-goal">{idea.what_to_build}</p>
+                ) : (
+                  <p className="agent-goal">{agent.goal}</p>
+                )}
+              </button>
+            );
+          })}
         </aside>
 
         {/* ── Right panel ── */}
@@ -315,16 +432,37 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
               {selected.events.map((ev, idx) => (
                 <div key={idx} className={`stream-line ${ev.type === "ERROR" ? "error" : ""}`}>
                   <span className="stream-type">{ev.type}</span>
-                  <span className="stream-text">{ev.purpose || ev.message || JSON.stringify(ev)}</span>
+                  <span className="stream-text">{String(ev.purpose || ev.message || JSON.stringify(ev))}</span>
                 </div>
               ))}
 
-              {selected.result && (
+              {selected.result ? (
                 <>
-                  <div className="stream-separator">— Result —</div>
+                  <div className="stream-separator">— TinyFish Result —</div>
                   <ResultRenderer result={selected.result} />
                 </>
-              )}
+              ) : null}
+
+              {/* LLM analysis report — iteration phase only */}
+              {phase === "iteration" && (() => {
+                const report = llmReports[selected.id];
+                if (report === "loading") {
+                  return (
+                    <div className="stream-separator llm-loading">
+                      ◎ Running VC analysis…
+                    </div>
+                  );
+                }
+                if (report && typeof report === "object") {
+                  return (
+                    <>
+                      <div className="stream-separator synthesis">— VC Analysis —</div>
+                      <LLMReportRenderer report={report} />
+                    </>
+                  );
+                }
+                return null;
+              })()}
 
               <div ref={streamEndRef} />
             </div>
@@ -356,6 +494,38 @@ function GridIcon() {
       <rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor" />
       <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" />
     </svg>
+  );
+}
+
+// ── LLM Analysis renderer ─────────────────────────────────────────────────────
+// Renders the 6-metric Brutal VC Partner verdict in the stream panel.
+
+const LLM_METRIC_LABELS: { key: keyof LLMAnalysis; label: string; badge: (m: LLMMetric) => string }[] = [
+  { key: "desperation_score", label: "Desperation Score", badge: (m) => `${m.score ?? "?"}/10` },
+  { key: "ghost_town_check",  label: "Ghost Town Check",  badge: (m) => m.verdict ?? "?" },
+  { key: "buildability",      label: "Buildability",       badge: (m) => m.verdict ?? "?" },
+  { key: "kill_factor",       label: "Kill Factor",        badge: (m) => m.risk ?? "?" },
+  { key: "the_prize_tam",     label: "The Prize (TAM)",    badge: (m) => m.annual_revenue_1pct ?? "?" },
+  { key: "sustainability",    label: "Sustainability",     badge: (m) => m.proposed_model ?? "?" },
+];
+
+function LLMReportRenderer({ report }: { report: LLMAnalysis }) {
+  return (
+    <div className="llm-report">
+      {LLM_METRIC_LABELS.map(({ key, label, badge }) => {
+        const metric = report[key];
+        if (!metric) return null;
+        return (
+          <div key={key} className="llm-metric">
+            <div className="llm-metric-header">
+              <span className="llm-metric-label">{label}</span>
+              <span className="llm-metric-badge">{badge(metric)}</span>
+            </div>
+            <p className="llm-metric-reasoning">{metric.reasoning}</p>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -443,8 +613,8 @@ function SynthesisLoading() {
     <div className="synthesis-loading">
       <div className="synthesis-loading-inner">
         <div className="synthesis-spinner" />
-        <p className="synthesis-loading-label">Synthesising agent results…</p>
-        <p className="synthesis-loading-sub">Combining findings and drafting up to 8 concrete ideas</p>
+        <p className="synthesis-loading-label">Aggregating VC thoughts…</p>
+        <p className="synthesis-loading-sub">Combining findings and drafting up to 8 unicorn ideas</p>
       </div>
     </div>
   );
@@ -468,11 +638,9 @@ export interface IdeaData {
 function SynthesisView({
   text,
   phase,
-  onIterate,
 }: {
   text: string;
   phase: "discovery" | "iteration";
-  onIterate?: (ideas: IdeaData[]) => void;
 }) {
   let ideas: IdeaData[] = [];
   let parseError: string | null = null;
@@ -492,22 +660,15 @@ function SynthesisView({
 
   return (
     <div className="synthesis-view">
-      <h1 className="synthesis-title">Draft ideas</h1>
+      <h1 className="synthesis-title">
+        {phase === "discovery" ? "Billion Dollar Ideas — launching research…" : "Billion Dollar Ideas"}
+      </h1>
       {parseError ? (
         <pre className="synthesis-error">{parseError}</pre>
       ) : (
-        <>
-          <div className="synthesis-ideas">
-            {ideas.map((idea) => <IdeaCard key={idea.rank} idea={idea} />)}
-          </div>
-
-          {/* Show "Research these ideas" button only in discovery phase */}
-          {phase === "discovery" && onIterate && ideas.length > 0 && (
-            <button className="iterate-btn" onClick={() => onIterate(ideas)}>
-              Research these ideas →
-            </button>
-          )}
-        </>
+        <div className="synthesis-ideas">
+          {ideas.map((idea) => <IdeaCard key={idea.rank} idea={idea} />)}
+        </div>
       )}
     </div>
   );
@@ -521,9 +682,9 @@ const IDEA_SECTIONS: { key: keyof IdeaData; label: string }[] = [
 ];
 
 function IdeaCard({ idea }: { idea: IdeaData }) {
-  // Top 3 get distinct accent colors; #4–8 fade through varied tones
-  const rankColors = ["#3B7BF8", "#22C55E", "#F59E0B", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#6B7280"];
-  const rankColor = rankColors[(idea.rank - 1)] ?? "#6B7280";
+  // Top 3 get distinct accent colors; #4-8 fade through varied tones
+  const rankColors = ["#ff6701", "#ff8c3a", "#ffa865", "#ffbe89", "#fecb8b", "#fcdba9", "#fae9c7", "#fef3e1"];
+  const rankColor = rankColors[(idea.rank - 1)] ?? "#fecb8b";
 
   return (
     <div className="idea-card">
