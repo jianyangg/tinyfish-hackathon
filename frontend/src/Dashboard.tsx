@@ -48,6 +48,45 @@ export interface BuildSpec {
   additionalContext: string;
 }
 
+function isBuildSpec(value: unknown): value is BuildSpec {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.title === "string"
+    && typeof candidate.whatToBuild === "string"
+    && typeof candidate.expectedUser === "string"
+    && typeof candidate.additionalContext === "string";
+}
+
+function extractBuildSpecs(payload: unknown): BuildSpec[] {
+  if (Array.isArray(payload)) {
+    return payload.filter(isBuildSpec);
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const data = payload as Record<string, unknown>;
+  const candidates = [
+    data.buildSpecs,
+    data.build_specs,
+    data.specs,
+    data.buildSpec,
+    data.build_spec,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate.filter(isBuildSpec);
+    }
+    if (isBuildSpec(candidate)) {
+      return [candidate];
+    }
+  }
+
+  return [];
+}
+
 interface PermissionRequest {
   id: string;
   message: string;
@@ -548,13 +587,24 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ideas }),
     })
-      .then((res) => res.json())
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail ?? `Final synthesis failed: ${res.status}`);
+        }
+        return data;
+      })
       .then((data) => {
-        setBuildSpecs(data.buildSpecs ?? data.build_specs ?? []);
+        const specs = extractBuildSpecs(data);
+        if (specs.length === 0) {
+          throw new Error(`Final synthesis returned no build specs: ${JSON.stringify(data).slice(0, 500)}`);
+        }
+        setBuildSpecs(specs);
         setView("buildSpecs");
       })
       .catch((err) => {
         console.error("Final synthesis failed:", err);
+        alert("Final synthesis returned no usable build specs. Check the backend response.");
       });
   }, [phase, agentStates, llmReports, iterationIdeas]);
 

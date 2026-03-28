@@ -506,6 +506,7 @@ async def final_synthesis(body: FinalSynthesisRequest):
         if not isinstance(build_specs, list):
             raise ValueError(f"Final synthesis returned non-list: {type(build_specs)}")
 
+        logger.info("Final synthesis raw build specs: %s", json.dumps(build_specs, indent=2))
         logger.info("Final synthesis complete: %d build specs", len(build_specs))
         return {"status": "complete", "build_specs": build_specs, "buildSpecs": build_specs}
     except Exception as exc:
