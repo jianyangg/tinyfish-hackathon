@@ -370,7 +370,7 @@ async def cancel_remaining(run_id: str):
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 async def _decompose_prompt(prompt: str) -> list[dict]:
-    """Call OpenAI to split a user prompt into 4 {url, goal} pairs."""
+    """Call OpenAI to split a user prompt into NUM_AGENTS {url, goal} pairs."""
     response = await openai_client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[

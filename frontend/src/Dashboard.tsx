@@ -103,7 +103,20 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
           const event: AgentEvent = JSON.parse(msg.data);
           console.log(`[agent ${agentIdx}] event:`, event.type, event);
 
-          if (event.type === "DONE") { es.close(); return; }
+          if (event.type === "DONE") {
+            // Mark non-complete agents as "error" so allDone checks resolve.
+            // This covers agents cancelled by "Skip remaining" or force-synthesis,
+            // where the backend sends DONE without a preceding COMPLETE event.
+            setAgentStates((prev) => {
+              const next = [...prev];
+              if (next[agentIdx] && next[agentIdx].status !== "complete") {
+                next[agentIdx] = { ...next[agentIdx], status: "error" };
+              }
+              return next;
+            });
+            es.close();
+            return;
+          }
 
           if (event.type === "SYNTHESIS_COMPLETE") {
             setSynthesis(event.result as string);
@@ -270,7 +283,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
           tinyfish_report: typeof agent.result === "string"
             ? agent.result
             : JSON.stringify(agent.result, null, 2),
-          vc_analysis: report as Record<string, unknown>,
+          vc_analysis: report as unknown as Record<string, unknown>,
         };
       })
       .filter(Boolean);
@@ -295,7 +308,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     return (
       <div className="dashboard">
         <header className="dashboard-header">
-          <button className="back-btn" onClick={() => setView("agents")} aria-label="Back to agents">←</button>
+          <button className="back-btn" onClick={() => setView("agents")} aria-label="Back to agents"><ArrowLeftIcon /></button>
           <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
           <p className="header-prompt synthesis-header-label">
             {buildSpecs ? "Build Specs — Top 4" : "Generating build specs…"}
@@ -317,7 +330,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     return (
       <div className="dashboard">
         <header className="dashboard-header">
-          <button className="back-btn" onClick={() => setView("agents")} aria-label="Back">←</button>
+          <button className="back-btn" onClick={() => setView("agents")} aria-label="Back"><ArrowLeftIcon /></button>
           <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
           <p className="header-prompt synthesis-header-label">
             {synthesis ? "Synthesised — launching research…" : "Synthesising…"}
@@ -353,7 +366,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     <div className="dashboard">
       {/* ── Header ── */}
       <header className="dashboard-header">
-        <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
+        <button className="back-btn" onClick={onBack} aria-label="Back"><ArrowLeftIcon /></button>
         <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
         <p className="header-prompt" title={phase === "iteration" ? "Market Research" : prompt}>
           {phase === "iteration"
@@ -598,6 +611,15 @@ function GridIcon() {
       <rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor" />
       <rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor" />
       <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ArrowLeftIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
     </svg>
   );
 }

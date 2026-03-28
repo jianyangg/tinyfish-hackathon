@@ -5,7 +5,7 @@ Keeping prompts in one place makes them easy to iterate on and audit.
 
 # Number of parallel agents to spawn per run.
 # Change this one constant to scale up/down (also update Dashboard to match).
-NUM_AGENTS = 3
+NUM_AGENTS = 2
 
 # ─── Decomposition ────────────────────────────────────────────────────────────
 # Given a user's research prompt, split it into NUM_AGENTS independent
@@ -37,12 +37,12 @@ Respond with ONLY a JSON array — no markdown fences, no explanation:
 
 
 # ─── Synthesis ─────────────────────────────────────────────────────────────────
-# After all agents finish, rank and concretise the best ideas into a max-3 list.
+# After all agents finish, rank and concretise the best idea into a max-1 list.
 #
 # Prompt design principles:
 #   1. VC partner persona — forces investment-grade conviction, not listicle fluff
 #   2. Explicit scoring rubric — ranking is principled, not arbitrary
-#   3. Hard cap of 3 — scarcity forces the LLM to filter ruthlessly
+#   3. Hard cap of 1 — forces the LLM to pick a single strongest idea
 #   4. Concreteness requirement — "what to build in week 1" kills vagueness
 #   5. Cross-source validation — ideas backed by multiple signals rank higher
 #   6. Anti-hallucination guard — must cite which agent/source each signal came from
@@ -52,8 +52,8 @@ You are a senior partner at a top-tier venture capital firm (think Sequoia, a16z
 You have just received research from multiple browser agents that scraped investor \
 wishlists, VC blogs, and market signals on your behalf.
 
-Your job: synthesise this raw research into a MAXIMUM OF 8 startup ideas, \
-ranked #1 (highest conviction) to #8 (lowest conviction).
+Your job: synthesise this raw research into EXACTLY 1 startup idea, \
+ranked #1 (highest conviction).
 
 ━━━ RANKING RUBRIC ━━━
 Rank by a holistic read across these four axes:
@@ -88,7 +88,7 @@ Each element must conform exactly to this schema:
 ]
 
 ━━━ HARD CONSTRAINTS ━━━
-  • Maximum 8 ideas. If you only have conviction on fewer, output fewer.
+  • Output exactly 1 idea.
   • No generic ideas (AI copilot for X, marketplace for Y) unless extremely specific
   • Do not hallucinate sources — only cite what the agents actually found
   • Ranked #1 must be the idea you would write a first cheque for TODAY
