@@ -17,6 +17,7 @@ from prompts import (
     SYNTHESIS_SYSTEM_PROMPT,
     TINYFISH_ITERATION_GOAL_TEMPLATE,
     LLM_ITERATION_SYSTEM_PROMPT,
+    FINAL_SYNTHESIS_SYSTEM_PROMPT,
     ITERATION_DEFAULT_URL,
     NUM_AGENTS,
 )
@@ -259,6 +260,65 @@ async def analyse_idea(body: LLMAnalysisRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+class IdeaReport(BaseModel):
+    """One idea bundled with its TinyFish research and VC analysis."""
+    title: str
+    what_to_build: str
+    tinyfish_report: str       # raw TinyFish agent result (stringified)
+    vc_analysis: dict          # the 6-metric LLM analysis object
+
+
+class FinalSynthesisRequest(BaseModel):
+    ideas: list[IdeaReport]
+
+
+@app.post("/final-synthesis")
+async def final_synthesis(body: FinalSynthesisRequest):
+    """Distill iteration results into top 4 concrete build specs.
+    Takes each idea's TinyFish report + VC analysis and asks GPT to select
+    the best 4 and produce actionable build specifications."""
+    logger.info("Final synthesis requested for %d ideas", len(body.ideas))
+
+    # Build a comprehensive user message with all idea data so the LLM
+    # can compare across ideas and pick the top 4.
+    idea_blocks = []
+    for i, idea in enumerate(body.ideas):
+        idea_blocks.append(
+            f"── Idea {i + 1}: {idea.title} ──\n"
+            f"What to build: {idea.what_to_build}\n\n"
+            f"TinyFish Market Research:\n{idea.tinyfish_report}\n\n"
+            f"VC Analysis:\n{json.dumps(idea.vc_analysis, indent=2)}"
+        )
+
+    user_content = "\n\n".join(idea_blocks)
+
+    try:
+        response = await openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": FINAL_SYNTHESIS_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.3,
+        )
+        raw = response.choices[0].message.content.strip()
+
+        # Strip markdown code fences if the model wraps the JSON
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1]
+            raw = raw.rsplit("```", 1)[0]
+
+        build_specs = json.loads(raw)
+        if not isinstance(build_specs, list):
+            raise ValueError(f"Final synthesis returned non-list: {type(build_specs)}")
+
+        logger.info("Final synthesis complete: %d build specs", len(build_specs))
+        return {"status": "complete", "build_specs": build_specs}
+    except Exception as exc:
+        logger.exception("Final synthesis failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/runs/{run_id}/synthesise")
 async def force_synthesise(run_id: str):
     """Trigger synthesis immediately with whatever agent results are available.
@@ -287,6 +347,24 @@ async def force_synthesise(run_id: str):
 
     asyncio.create_task(_run_synthesis(run_id))
     return {"status": "started"}
+
+
+@app.post("/runs/{run_id}/cancel-remaining")
+async def cancel_remaining(run_id: str):
+    """Cancel all still-running agents without triggering synthesis.
+    Used by the iteration phase to stop agents early and keep completed results."""
+    if run_id not in runs:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    run = runs[run_id]
+    cancelled = 0
+    for agent in run["agents"]:
+        if not agent["done"] and agent["task"] is not None:
+            agent["task"].cancel()
+            cancelled += 1
+
+    logger.info("Cancel-remaining for run %s: cancelled %d agents", run_id, cancelled)
+    return {"status": "ok", "cancelled": cancelled}
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

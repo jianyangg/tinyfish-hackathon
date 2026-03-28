@@ -40,6 +40,14 @@ interface LLMAnalysis {
   sustainability: LLMMetric;
 }
 
+// Final output: one build spec per top idea, produced by the final synthesis LLM.
+export interface BuildSpec {
+  title: string;
+  whatToBuild: string;
+  expectedUser: string;
+  additionalContext: string;
+}
+
 interface DashboardProps {
   runId: string;
   agents: AgentConfig[];
@@ -63,10 +71,13 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
   );
   const [selectedAgent, setSelectedAgent] = useState(0);
   const [synthesis, setSynthesis] = useState<string | null>(null);
-  // "agents" = main view; "synthesis" = full-screen synthesis panel
-  const [view, setView] = useState<"agents" | "synthesis">("agents");
+  // "agents" = main view; "synthesis" = full-screen synthesis panel; "buildSpecs" = final output
+  const [view, setView] = useState<"agents" | "synthesis" | "buildSpecs">("agents");
   // "focus" = sidebar + single agent detail; "grid" = all agents in a grid
   const [layout, setLayout] = useState<"focus" | "grid">("focus");
+
+  // Final build specs — top 4 ideas distilled into actionable specs.
+  const [buildSpecs, setBuildSpecs] = useState<BuildSpec[] | null>(null);
 
   // Per-agent LLM analysis results (iteration phase only).
   // Keyed by agent id. Each entry is null (pending), "loading", or the parsed analysis object.
@@ -224,6 +235,83 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     } catch { /* parse error — will show in synthesis view below */ }
   }, [synthesis, phase, onIterate]);
 
+  // Auto-trigger final synthesis once ALL iteration LLM analyses have completed.
+  // Collects each idea's TinyFish report + VC analysis and sends to POST /api/final-synthesis
+  // to produce the top 4 build specs.
+  const finalSynthTriggered = useRef(false);
+  useEffect(() => {
+    if (phase !== "iteration" || !iterationIdeas || finalSynthTriggered.current) return;
+
+    // Check that every agent is done AND every LLM analysis has resolved
+    const allAgentsDone = agentStates.length > 0 && agentStates.every(
+      (a) => a.status === "complete" || a.status === "error"
+    );
+    if (!allAgentsDone) return;
+
+    // Every completed agent should have a finished LLM report (not "loading", not undefined)
+    const allLlmDone = agentStates.every((a) => {
+      if (a.status !== "complete" || !a.result) return true; // errored/no-result agents are skipped
+      const report = llmReports[a.id];
+      return report !== undefined && report !== "loading";
+    });
+    if (!allLlmDone) return;
+
+    finalSynthTriggered.current = true;
+
+    // Build the payload: one entry per idea that has both a TinyFish result and an LLM analysis
+    const ideas = iterationIdeas
+      .map((idea, i) => {
+        const agent = agentStates[i];
+        const report = llmReports[i];
+        if (!agent?.result || !report || report === "loading") return null;
+        return {
+          title: idea.title,
+          what_to_build: idea.what_to_build,
+          tinyfish_report: typeof agent.result === "string"
+            ? agent.result
+            : JSON.stringify(agent.result, null, 2),
+          vc_analysis: report as Record<string, unknown>,
+        };
+      })
+      .filter(Boolean);
+
+    fetch("/api/final-synthesis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ideas }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setBuildSpecs(data.build_specs);
+        setView("buildSpecs");
+      })
+      .catch((err) => {
+        console.error("Final synthesis failed:", err);
+      });
+  }, [phase, agentStates, llmReports, iterationIdeas]);
+
+  // ── Build Specs view — final output: top 4 concrete build specs ────────────
+  if (view === "buildSpecs") {
+    return (
+      <div className="dashboard">
+        <header className="dashboard-header">
+          <button className="back-btn" onClick={() => setView("agents")} aria-label="Back to agents">←</button>
+          <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
+          <p className="header-prompt synthesis-header-label">
+            {buildSpecs ? "Build Specs — Top 4" : "Generating build specs…"}
+          </p>
+        </header>
+        <div className="synthesis-full-panel">
+          {buildSpecs ? (
+            <BuildSpecsView specs={buildSpecs} />
+          ) : (
+            <SynthesisLoading label="Distilling top 4 build specs…" sub="Ranking ideas by market evidence and buildability" />
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ── Synthesis view — shown while waiting for synthesis or on parse error ───
   if (view === "synthesis") {
     return (
@@ -248,11 +336,17 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
 
   const showCompletedState = selected.status === "complete" && selected.streamingUrl;
   const completedCount = agentStates.filter((a) => a.status === "complete" || a.status === "error").length;
+  const allDone = agentStates.length > 0 && agentStates.every((a) => a.status === "complete" || a.status === "error");
   const canForceSynth = completedCount > 0;
 
   async function handleForceSynth() {
     setView("synthesis");
     await fetch(`/api/runs/${runId}/synthesise`, { method: "POST" });
+  }
+
+  // Cancel remaining TinyFish agents without triggering synthesis — iteration phase only
+  async function handleCancelRemaining() {
+    await fetch(`/api/runs/${runId}/cancel-remaining`, { method: "POST" });
   }
 
   return (
@@ -286,8 +380,10 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
           </button>
         </div>
 
-        {/* Synthesise button — only shown during discovery phase */}
-        {phase === "discovery" && (
+        {/* Phase-aware action button:
+            Discovery → "Synthesise now" (cancels agents + triggers LLM synthesis)
+            Iteration → "Skip remaining" (cancels agents only, keeps completed results) */}
+        {phase === "discovery" ? (
           <button
             className={`synthesise-btn ${canForceSynth ? "ready" : ""}`}
             disabled={!canForceSynth}
@@ -295,6 +391,15 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
             title={canForceSynth ? `Synthesise with ${completedCount}/${agentStates.length} agents` : "Waiting for at least one agent to complete"}
           >
             Synthesise now ({completedCount}/{agentStates.length})
+          </button>
+        ) : !allDone && (
+          <button
+            className={`synthesise-btn ${canForceSynth ? "ready" : ""}`}
+            disabled={!canForceSynth}
+            onClick={handleCancelRemaining}
+            title="Cancel remaining agents and keep completed results"
+          >
+            Skip remaining ({completedCount}/{agentStates.length})
           </button>
         )}
       </header>
@@ -608,13 +713,19 @@ function formatKey(key: string): string {
 
 // ── Synthesis loading state ───────────────────────────────────────────────────
 
-function SynthesisLoading() {
+function SynthesisLoading({
+  label = "Aggregating VC thoughts…",
+  sub = "Combining findings and drafting up to 8 unicorn ideas",
+}: {
+  label?: string;
+  sub?: string;
+}) {
   return (
     <div className="synthesis-loading">
       <div className="synthesis-loading-inner">
         <div className="synthesis-spinner" />
-        <p className="synthesis-loading-label">Aggregating VC thoughts…</p>
-        <p className="synthesis-loading-sub">Combining findings and drafting up to 8 unicorn ideas</p>
+        <p className="synthesis-loading-label">{label}</p>
+        <p className="synthesis-loading-sub">{sub}</p>
       </div>
     </div>
   );
@@ -698,6 +809,51 @@ function IdeaCard({ idea }: { idea: IdeaData }) {
           <div key={key} className="idea-section">
             <p className="idea-section-label">{label}</p>
             <p className="idea-section-content">{idea[key] as string}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Build Specs view — final output ──────────────────────────────────────────
+// Displays the top 4 concrete build specs produced by the final synthesis LLM.
+
+const BUILD_SPEC_SECTIONS: { key: keyof BuildSpec; label: string }[] = [
+  { key: "whatToBuild",       label: "WHAT TO BUILD" },
+  { key: "expectedUser",      label: "EXPECTED USER" },
+  { key: "additionalContext", label: "ADDITIONAL CONTEXT" },
+];
+
+function BuildSpecsView({ specs }: { specs: BuildSpec[] }) {
+  return (
+    <div className="synthesis-view">
+      <h1 className="synthesis-title">Top {specs.length} Build Specs</h1>
+      <div className="synthesis-ideas">
+        {specs.map((spec, i) => (
+          <BuildSpecCard key={i} spec={spec} rank={i + 1} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BuildSpecCard({ spec, rank }: { spec: BuildSpec; rank: number }) {
+  const rankColors = ["#ff6701", "#ff8c3a", "#ffa865", "#ffbe89"];
+  const rankColor = rankColors[rank - 1] ?? "#ffbe89";
+
+  return (
+    <div className="idea-card">
+      <div className="idea-card-header" style={{ borderLeftColor: rankColor }}>
+        <span className="idea-rank" style={{ color: rankColor }}>#{rank}</span>
+        <h2 className="idea-title">{spec.title}</h2>
+      </div>
+
+      <div className="idea-sections">
+        {BUILD_SPEC_SECTIONS.map(({ key, label }) => (
+          <div key={key} className="idea-section">
+            <p className="idea-section-label">{label}</p>
+            <p className="idea-section-content">{spec[key]}</p>
           </div>
         ))}
       </div>
