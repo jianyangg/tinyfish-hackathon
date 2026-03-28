@@ -12,7 +12,13 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from sse_starlette.sse import EventSourceResponse
 
-from prompts import DECOMPOSITION_SYSTEM_PROMPT, SYNTHESIS_SYSTEM_PROMPT, NUM_AGENTS
+from prompts import (
+    DECOMPOSITION_SYSTEM_PROMPT,
+    SYNTHESIS_SYSTEM_PROMPT,
+    ITERATION_GOAL_TEMPLATE,
+    ITERATION_DEFAULT_URL,
+    NUM_AGENTS,
+)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -48,24 +54,27 @@ class RunRequest(BaseModel):
     prompt: str
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok"}
+class TaskSpec(BaseModel):
+    url: str
+    goal: str
 
 
-@app.post("/runs")
-async def create_run(body: RunRequest):
-    """
-    1. Use OpenAI to decompose the user's prompt into 4 {url, goal} pairs.
-    2. Store the run with 4 agent queues.
-    3. Spawn 4 background tasks that stream from TinyFish → queue.
-    """
-    logger.info("Creating run — decomposing prompt via OpenAI…")
-    tasks = await _decompose_prompt(body.prompt)
-    logger.info("Decomposition complete: %s", json.dumps(tasks, indent=2))
+class RunFromTasksRequest(BaseModel):
+    prompt: str                    # descriptive label for the run (shown in header)
+    tasks: list[TaskSpec]
+    auto_synthesise: bool = True
 
+
+# ── Shared run-creation logic ────────────────────────────────────────────────
+# Both POST /runs (with LLM decomposition) and POST /runs/from-tasks (direct)
+# share the same agent-spawning plumbing. This helper avoids duplicating it.
+
+def _create_run(
+    prompt: str,
+    tasks: list[dict],
+    auto_synthesise: bool = True,
+) -> tuple[str, list[dict]]:
+    """Create a run, spawn TinyFish agents, and return (run_id, agents)."""
     run_id = uuid.uuid4().hex[:8]
     agents = []
     for i, task in enumerate(tasks):
@@ -81,10 +90,11 @@ async def create_run(body: RunRequest):
         })
 
     runs[run_id] = {
-        "prompt": body.prompt,
+        "prompt": prompt,
         "agents": agents,
         "synthesis": None,
         "synthesis_started": False,
+        "auto_synthesise": auto_synthesise,
     }
 
     # Spawn all agent streams in parallel and store their task refs so we can
@@ -95,7 +105,59 @@ async def create_run(body: RunRequest):
         )
         agents[i]["task"] = t
 
-    logger.info("Run %s created — 4 agents spawned", run_id)
+    logger.info("Run %s created — %d agents spawned (auto_synthesise=%s)",
+                run_id, len(agents), auto_synthesise)
+
+    return run_id, agents
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok"}
+
+
+@app.get("/iteration-template")
+async def get_iteration_template() -> dict:
+    """Return the iteration prompt template and default URL so the frontend
+    can build TinyFish tasks without hardcoding prompts."""
+    return {
+        "goal_template": ITERATION_GOAL_TEMPLATE,
+        "default_url": ITERATION_DEFAULT_URL,
+    }
+
+
+@app.post("/runs")
+async def create_run(body: RunRequest):
+    """
+    1. Use OpenAI to decompose the user's prompt into N {url, goal} pairs.
+    2. Store the run with N agent queues.
+    3. Spawn N background tasks that stream from TinyFish → queue.
+    """
+    logger.info("Creating run — decomposing prompt via OpenAI…")
+    tasks = await _decompose_prompt(body.prompt)
+    logger.info("Decomposition complete: %s", json.dumps(tasks, indent=2))
+
+    run_id, agents = _create_run(body.prompt, tasks)
+
+    return {
+        "run_id": run_id,
+        "agents": [{"url": a["url"], "goal": a["goal"]} for a in agents],
+    }
+
+
+@app.post("/runs/from-tasks")
+async def create_run_from_tasks(body: RunFromTasksRequest):
+    """Create a run from pre-built tasks — no LLM decomposition step.
+    Used by the iteration phase where each idea becomes its own agent task."""
+    logger.info("Creating run from %d pre-built tasks", len(body.tasks))
+
+    run_id, agents = _create_run(
+        body.prompt,
+        [t.model_dump() for t in body.tasks],
+        body.auto_synthesise,
+    )
 
     return {
         "run_id": run_id,
@@ -291,12 +353,12 @@ async def _stream_agent(run_id: str, agent_idx: int, url: str, goal: str):
         await _broadcast(agent, {"type": "DONE"})
         logger.info("Agent %d finished", agent_idx)
 
-    # If all agents are done and synthesis hasn't been started yet, trigger it.
-    # The synthesis_started flag prevents a double-run when force_synthesise
-    # was already called mid-flight by the user.
+    # If all agents are done, auto_synthesise is enabled, and synthesis hasn't
+    # been started yet, trigger it. The iteration phase sets auto_synthesise=False
+    # so agents completing there won't kick off a synthesis LLM call.
     run = runs[run_id]
     all_done = all(a["done"] for a in run["agents"])
-    if all_done and not run.get("synthesis_started"):
+    if all_done and run.get("auto_synthesise", True) and not run.get("synthesis_started"):
         run["synthesis_started"] = True
         logger.info("All agents done for run %s — starting synthesis", run_id)
         asyncio.create_task(_run_synthesis(run_id))

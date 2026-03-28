@@ -25,12 +25,14 @@ interface DashboardProps {
   runId: string;
   agents: AgentConfig[];
   prompt: string;
+  phase: "discovery" | "iteration";
   onBack: () => void;
+  onIterate?: (ideas: IdeaData[]) => void;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function Dashboard({ runId, agents, prompt, onBack }: DashboardProps) {
+export default function Dashboard({ runId, agents, prompt, phase, onBack, onIterate }: DashboardProps) {
   const [agentStates, setAgentStates] = useState<AgentState[]>(() =>
     agents.map((a, i) => ({
       id: i, url: a.url, goal: a.goal,
@@ -111,15 +113,17 @@ export default function Dashboard({ runId, agents, prompt, onBack }: DashboardPr
     streamEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [selected.events.length, selected.result, synthesis]);
 
-  // Auto-navigate to synthesis view once every agent is done
+  // Auto-navigate to synthesis view once every agent is done (discovery only).
+  // Iteration phase has no auto-synthesis — agents complete and results stay visible.
   useEffect(() => {
+    if (phase === "iteration") return;
     const allDone = agentStates.every(
       (a) => a.status === "complete" || a.status === "error"
     );
     if (allDone && agentStates.length > 0) {
       setView("synthesis");
     }
-  }, [agentStates]);
+  }, [agentStates, phase]);
 
   // ── Drag-to-resize ────────────────────────────────────────────────────────
   const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
@@ -137,7 +141,7 @@ export default function Dashboard({ runId, agents, prompt, onBack }: DashboardPr
 
   const onPointerUp = useCallback(() => { dragging.current = false; }, []);
 
-  // ── Synthesis view — shown automatically once all agents finish ───────────
+  // ── Synthesis view — shown automatically once discovery agents finish ──────
   if (view === "synthesis") {
     return (
       <div className="dashboard">
@@ -150,7 +154,7 @@ export default function Dashboard({ runId, agents, prompt, onBack }: DashboardPr
         </header>
         <div className="synthesis-full-panel">
           {synthesis ? (
-            <SynthesisView text={synthesis} />
+            <SynthesisView text={synthesis} phase={phase} onIterate={onIterate} />
           ) : (
             <SynthesisLoading />
           )}
@@ -174,8 +178,10 @@ export default function Dashboard({ runId, agents, prompt, onBack }: DashboardPr
       <header className="dashboard-header">
         <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
         <div className="wordmark compact"><GrassIcon /><span>grasstoucher</span></div>
-        <p className="header-prompt" title={prompt}>
-          {prompt.length > 100 ? prompt.slice(0, 100) + "…" : prompt}
+        <p className="header-prompt" title={phase === "iteration" ? "Market Research" : prompt}>
+          {phase === "iteration"
+            ? "Market Research"
+            : prompt.length > 100 ? prompt.slice(0, 100) + "…" : prompt}
         </p>
         {/* ── Layout toggle ── */}
         <div className="layout-toggle">
@@ -197,14 +203,17 @@ export default function Dashboard({ runId, agents, prompt, onBack }: DashboardPr
           </button>
         </div>
 
-        <button
-          className={`synthesise-btn ${canForceSynth ? "ready" : ""}`}
-          disabled={!canForceSynth}
-          onClick={handleForceSynth}
-          title={canForceSynth ? `Synthesise with ${completedCount}/${agentStates.length} agents` : "Waiting for at least one agent to complete"}
-        >
-          Synthesise now ({completedCount}/{agentStates.length})
-        </button>
+        {/* Synthesise button — only shown during discovery phase */}
+        {phase === "discovery" && (
+          <button
+            className={`synthesise-btn ${canForceSynth ? "ready" : ""}`}
+            disabled={!canForceSynth}
+            onClick={handleForceSynth}
+            title={canForceSynth ? `Synthesise with ${completedCount}/${agentStates.length} agents` : "Waiting for at least one agent to complete"}
+          >
+            Synthesise now ({completedCount}/{agentStates.length})
+          </button>
+        )}
       </header>
 
       {/* ── Grid view ── */}
@@ -443,7 +452,7 @@ function SynthesisLoading() {
 
 // ── Synthesis types ───────────────────────────────────────────────────────────
 
-interface IdeaData {
+export interface IdeaData {
   rank: number;
   title: string;
   what_to_build: string;
@@ -456,7 +465,15 @@ interface IdeaData {
 // The backend now returns a JSON array of IdeaData objects. We parse once here
 // and pass typed structs down to IdeaCard, avoiding fragile regex text parsing.
 
-function SynthesisView({ text }: { text: string }) {
+function SynthesisView({
+  text,
+  phase,
+  onIterate,
+}: {
+  text: string;
+  phase: "discovery" | "iteration";
+  onIterate?: (ideas: IdeaData[]) => void;
+}) {
   let ideas: IdeaData[] = [];
   let parseError: string | null = null;
 
@@ -479,9 +496,18 @@ function SynthesisView({ text }: { text: string }) {
       {parseError ? (
         <pre className="synthesis-error">{parseError}</pre>
       ) : (
-        <div className="synthesis-ideas">
-          {ideas.map((idea) => <IdeaCard key={idea.rank} idea={idea} />)}
-        </div>
+        <>
+          <div className="synthesis-ideas">
+            {ideas.map((idea) => <IdeaCard key={idea.rank} idea={idea} />)}
+          </div>
+
+          {/* Show "Research these ideas" button only in discovery phase */}
+          {phase === "discovery" && onIterate && ideas.length > 0 && (
+            <button className="iterate-btn" onClick={() => onIterate(ideas)}>
+              Research these ideas →
+            </button>
+          )}
+        </>
       )}
     </div>
   );

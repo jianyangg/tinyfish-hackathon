@@ -94,3 +94,31 @@ Each element must conform exactly to this schema:
   • Ranked #1 must be the idea you would write a first cheque for TODAY
   • Output ONLY the JSON array. Any non-JSON text will break the parser.
 """
+
+
+# ─── Iteration (Market Research) ──────────────────────────────────────────────
+# After synthesis produces draft ideas, each idea is validated by a dedicated
+# TinyFish browser agent. This template is filled with the idea title +
+# description, and the agent starts at google.com to research freely.
+
+ITERATION_GOAL_TEMPLATE = """\
+Role: You are a high-speed Market Research Scout. \
+Task: For the startup idea: {idea}, find and extract the following raw data points. \
+Do not provide opinions, only facts and links. \
+Demand Evidence: Find 5-10 recent (last 6 months) Reddit posts, Blogs, or forum queries \
+where users are asking for this specific solution or complaining about a lack of it. \
+Capture what you can about the reality of this problem and the pain it has. \
+Competitor Audit: List the top 3 direct competitors found on Google, Product Hunt, or any \
+other existing platform like VC pages and startups. Include their names and their primary \
+pricing & business model. \
+Big Tech Overlap: Search for recent news or "Coming Soon" blog posts from Google, Meta, or \
+Microsoft regarding this specific niche. \
+Resource Check: Search GitHub and developer docs for available APIs or open-source libraries \
+that handle the core logic of this idea. \
+Niche Volume: Be able to scrape relevant data that will allow us to size the market for this \
+specific product, using sources like statista or official market data that are reliable. \
+Output: Provide a structured report of these facts with URLs.\
+"""
+
+# Default starting URL for iteration agents — they search from here.
+ITERATION_DEFAULT_URL = "https://www.google.com"

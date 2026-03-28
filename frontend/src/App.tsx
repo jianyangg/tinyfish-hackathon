@@ -1,5 +1,5 @@
 import { useState, useRef, type FormEvent } from "react";
-import Dashboard from "./Dashboard";
+import Dashboard, { type IdeaData } from "./Dashboard";
 import "./App.css";
 
 // ── Types shared between App and Dashboard ───────────────────────────────────
@@ -17,6 +17,7 @@ export default function App() {
   const [loadingStep, setLoadingStep] = useState<LoadingStep>(null);
   const [runId, setRunId] = useState("");
   const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const [phase, setPhase] = useState<"discovery" | "iteration">("discovery");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   async function handleSubmit(e: FormEvent) {
@@ -24,6 +25,7 @@ export default function App() {
     const trimmed = query.trim();
     if (!trimmed || view === "loading") return;
 
+    setPhase("discovery");
     setView("loading");
     setLoadingStep("decomposing");
 
@@ -53,6 +55,53 @@ export default function App() {
     }
   }
 
+  // ── Iteration handler ──────────────────────────────────────────────────────
+  // Fetches the prompt template from the backend (single source of truth),
+  // builds one task per idea, and creates a new run with auto_synthesise=false.
+  async function handleIterate(ideas: IdeaData[]) {
+    setPhase("iteration");
+    setView("loading");
+    setLoadingStep("spawning");
+
+    try {
+      // Fetch the iteration prompt template from the backend so prompts
+      // stay in one place (backend/prompts.py).
+      const tplRes = await fetch("/api/iteration-template");
+      if (!tplRes.ok) throw new Error(`Failed to fetch template: ${tplRes.status}`);
+      const { goal_template, default_url } = await tplRes.json();
+
+      const tasks = ideas.map((idea) => ({
+        url: default_url,
+        goal: goal_template.replace("{idea}", `${idea.title}: ${idea.what_to_build}`),
+      }));
+
+      const res = await fetch("/api/runs/from-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Market research iteration",
+          tasks,
+          auto_synthesise: false,
+        }),
+      });
+      if (!res.ok) throw new Error(`Backend error: ${res.status}`);
+
+      const data = await res.json();
+      setRunId(data.run_id);
+      setAgents(data.agents);
+
+      await new Promise((r) => setTimeout(r, 800));
+      setView("dashboard");
+      setLoadingStep(null);
+    } catch (err) {
+      console.error("Failed to start iteration:", err);
+      alert("Failed to start research agents — check that the backend is running.");
+      setView("prompt");
+      setPhase("discovery");
+      setLoadingStep(null);
+    }
+  }
+
   // ── Dashboard view ─────────────────────────────────────────────────────────
   if (view === "dashboard") {
     return (
@@ -60,7 +109,9 @@ export default function App() {
         runId={runId}
         agents={agents}
         prompt={query}
-        onBack={() => setView("prompt")}
+        phase={phase}
+        onBack={() => { setView("prompt"); setPhase("discovery"); }}
+        onIterate={handleIterate}
       />
     );
   }
@@ -76,18 +127,29 @@ export default function App() {
 
         <main className="center">
           <div className="loading-sequence">
-            <LoadingStepIndicator
-              label="Analyzing prompt"
-              detail="Breaking your prompt into 4 focused research tasks…"
-              active={loadingStep === "decomposing"}
-              done={loadingStep === "spawning"}
-            />
-            <LoadingStepIndicator
-              label="Spawning 4 agents"
-              detail="Launching parallel browser sessions…"
-              active={loadingStep === "spawning"}
-              done={false}
-            />
+            {phase === "discovery" ? (
+              <>
+                <LoadingStepIndicator
+                  label="Analyzing prompt"
+                  detail="Breaking your prompt into focused research tasks…"
+                  active={loadingStep === "decomposing"}
+                  done={loadingStep === "spawning"}
+                />
+                <LoadingStepIndicator
+                  label="Spawning agents"
+                  detail="Launching parallel browser sessions…"
+                  active={loadingStep === "spawning"}
+                  done={false}
+                />
+              </>
+            ) : (
+              <LoadingStepIndicator
+                label="Spawning research agents"
+                detail="Launching market research for each draft idea…"
+                active={loadingStep === "spawning"}
+                done={false}
+              />
+            )}
           </div>
         </main>
       </div>

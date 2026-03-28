@@ -582,6 +582,31 @@
   gap: 24px;
 }
 
+/* ── Iterate button ─────────────────────────────────────────────── */
+.iterate-btn {
+  display: block;
+  margin: 36px auto 0;
+  padding: 14px 32px;
+  border-radius: 12px;
+  border: none;
+  background: var(--blue);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: -0.2px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59, 123, 248, 0.35);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.iterate-btn:hover {
+  background: var(--blue-dark);
+  box-shadow: 0 4px 14px rgba(59, 123, 248, 0.45);
+}
+.iterate-btn:active {
+  transform: scale(0.97);
+}
+
 /* ── Idea card ───────────────────────────────────────────────────── */
 .idea-card {
   background: #fff;
