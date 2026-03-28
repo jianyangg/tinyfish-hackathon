@@ -74,10 +74,10 @@ async def create_run(body: RunRequest):
             "url": task["url"],
             "goal": task["goal"],
             "subscribers": [],
-            # Keep a full history so late-connecting clients can replay
             "history": [],
             "done": False,
             "result": None,
+            "task": None,  # asyncio.Task ref stored after creation
         })
 
     runs[run_id] = {
@@ -87,11 +87,13 @@ async def create_run(body: RunRequest):
         "synthesis_started": False,
     }
 
-    # Spawn all 4 TinyFish streams in parallel
+    # Spawn all agent streams in parallel and store their task refs so we can
+    # cancel them later if the user triggers forced synthesis.
     for i, task in enumerate(tasks):
-        asyncio.create_task(
+        t = asyncio.create_task(
             _stream_agent(run_id, i, task["url"], task["goal"])
         )
+        agents[i]["task"] = t
 
     logger.info("Run %s created — 4 agents spawned", run_id)
 
@@ -172,6 +174,15 @@ async def force_synthesise(run_id: str):
 
     run["synthesis_started"] = True
     logger.info("Force-synthesise requested for run %s", run_id)
+
+    # Cancel any agents still streaming from TinyFish to free up their
+    # browser slots. asyncio.Task.cancel() raises CancelledError inside the
+    # coroutine; the finally block in _stream_agent handles cleanup.
+    for agent in run["agents"]:
+        if not agent["done"] and agent["task"] is not None:
+            agent["task"].cancel()
+            logger.info("Cancelled agent %d (still running)", agent["id"])
+
     asyncio.create_task(_run_synthesis(run_id))
     return {"status": "started"}
 
@@ -266,6 +277,9 @@ async def _stream_agent(run_id: str, agent_idx: int, url: str, goal: str):
                                 agent["result"] = event.get("result")
                         except json.JSONDecodeError:
                             logger.warning("Agent %d bad JSON: %s", agent_idx, payload[:200])
+    except asyncio.CancelledError:
+        # Raised intentionally by force_synthesise — not an error.
+        logger.info("Agent %d cancelled (force-synthesise)", agent_idx)
     except Exception as exc:
         logger.exception("Agent %d failed: %s", agent_idx, exc)
         await _broadcast(agent, {

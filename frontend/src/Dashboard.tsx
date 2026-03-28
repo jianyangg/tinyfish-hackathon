@@ -221,8 +221,6 @@ export default function Dashboard({ runId, agents, prompt, onBack }: DashboardPr
               key={selected.streamingUrl}
               src={selected.streamingUrl}
               title={`Agent ${selected.id + 1} live preview`}
-              sandbox="allow-scripts allow-same-origin allow-forms"
-              referrerPolicy="no-referrer"
             />
           ) : (
             <div className="iframe-placeholder">
