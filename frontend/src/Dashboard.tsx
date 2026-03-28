@@ -175,6 +175,28 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     }
   }, [agentStates, phase]);
 
+  // Poll for synthesis result when on the synthesis view without a result.
+  // The SYNTHESIS_COMPLETE SSE event is broadcast AFTER all agents' DONE events,
+  // which means all EventSources are already closed by the time it arrives.
+  // Polling the dedicated endpoint is the reliable fallback.
+  useEffect(() => {
+    if (view !== "synthesis" || synthesis !== null) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/runs/${runId}/synthesis`);
+        const data = await res.json();
+        if (data.status === "complete") {
+          setSynthesis(data.result);
+        }
+      } catch {
+        // Network error — keep polling
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [view, synthesis, runId]);
+
   // Auto-trigger LLM analysis when an iteration agent completes.
   // Each completed agent's TinyFish result is sent to POST /api/analyse-idea,
   // producing the Brutal VC Partner verdict alongside the raw research.
@@ -737,7 +759,7 @@ function formatKey(key: string): string {
 
 function SynthesisLoading({
   label = "Aggregating VC thoughts…",
-  sub = "Combining findings and drafting up to 8 unicorn ideas",
+  sub = "Combining findings and selecting the strongest idea",
 }: {
   label?: string;
   sub?: string;
