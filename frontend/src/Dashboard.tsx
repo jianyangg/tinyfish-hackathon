@@ -226,9 +226,17 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
   useEffect(() => {
     if (view !== "synthesis" || synthesis !== null) return;
 
+    let stopped = false;
     const interval = setInterval(async () => {
+      if (stopped) return;
       try {
         const res = await fetch(`/api/runs/${runId}/synthesis`);
+        if (res.status === 404) {
+          // Run no longer exists (backend restarted) — stop polling
+          stopped = true;
+          clearInterval(interval);
+          return;
+        }
         const data = await res.json();
         if (data.status === "complete") {
           setSynthesis(data.result);
