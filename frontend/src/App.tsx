@@ -270,7 +270,7 @@ export default function App() {
       <div className="page">
       <header className="wordmark">
         <YCIcon />
-        <span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span>
+        <span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>GoTouchGrass</span>
       </header>
 
         <main className="center">
@@ -309,7 +309,7 @@ export default function App() {
     <div className="page">
       <header className="wordmark">
         <YCIcon />
-        <span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span>
+        <span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>GoTouchGrass</span>
       </header>
 
       <main className="center">
@@ -680,8 +680,8 @@ function LoadingStepIndicator({
 export function YCIcon() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect width="24" height="24" rx="4" fill="#46a546" />
-      <path d="M12.6,15 L12.6,20 L11.4,20 L11.4,15 L6.5,6 L8,6 L12,13.5 L16,6 L17.5,6 L12.6,15 Z" fill="#ffffff" />
+      <rect width="24" height="24" rx="4" fill="#ff6701" />
+      <path d="M6 19v-4c0-2 1.5-4 4-4M12 19v-4c0-3 2-6 5-6M9 19v-2M15 19v-2" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

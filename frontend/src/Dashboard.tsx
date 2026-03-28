@@ -589,6 +589,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     })
       .then(async (res) => {
         const data = await res.json();
+        console.log("[final-synthesis] raw response:", data);
         if (!res.ok) {
           throw new Error(data.detail ?? `Final synthesis failed: ${res.status}`);
         }
@@ -596,6 +597,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
       })
       .then((data) => {
         const specs = extractBuildSpecs(data);
+        console.log("[final-synthesis] extracted build specs:", specs);
         if (specs.length === 0) {
           throw new Error(`Final synthesis returned no build specs: ${JSON.stringify(data).slice(0, 500)}`);
         }
@@ -619,7 +621,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
       <div className="dashboard">
         <header className="dashboard-header">
           <button className="back-btn" onClick={() => setView("agents")} aria-label="Back to agents"><ArrowLeftIcon /></button>
-          <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
+          <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>GoTouchGrass</span></div>
           <p className="header-prompt synthesis-header-label">
             {buildSpecs ? "Build Specs — Top 4" : "Generating build specs…"}
           </p>
@@ -661,7 +663,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
       <div className="dashboard">
         <header className="dashboard-header">
           <button className="back-btn" onClick={() => setView("agents")} aria-label="Back"><ArrowLeftIcon /></button>
-          <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
+          <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>GoTouchGrass</span></div>
           <p className="header-prompt synthesis-header-label">
             {synthesis ? "Synthesised — launching research…" : "Synthesising…"}
           </p>
@@ -697,7 +699,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
       {/* ── Header ── */}
       <header className="dashboard-header">
         <button className="back-btn" onClick={onBack} aria-label="Back"><ArrowLeftIcon /></button>
-        <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
+        <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>GoTouchGrass</span></div>
         <p className="header-prompt" title={phase === "iteration" ? "Market Research" : prompt}>
           {phase === "iteration"
             ? "Market Research"
