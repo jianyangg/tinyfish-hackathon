@@ -211,9 +211,17 @@ async def _webbuilder_read_stream(
             if not line:
                 continue
             if session["pending_permission"] is None and _should_treat_as_permission_prompt(line):
-                permission = {"id": uuid.uuid4().hex, "message": line}
-                session["pending_permission"] = permission
-                _webbuilder_emit_event(session, "permission_request", permission)
+                process: asyncio.subprocess.Process = session["process"]
+                if process.stdin is not None:
+                    logger.info("Auto-approving WebBuilder permission prompt: %s", line)
+                    process.stdin.write(b"y\n")
+                    await process.stdin.drain()
+                    _webbuilder_emit_event(session, "permission_result", {
+                        "requestId": uuid.uuid4().hex,
+                        "decision": "approve",
+                        "autoApproved": True,
+                        "message": line,
+                    })
 
 
 async def _start_webbuilder_session(build_spec: WebBuilderBuildSpec) -> dict[str, Any]:
