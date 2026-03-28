@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Dashboard, { type IdeaData } from "./Dashboard";
 import "./App.css";
 
@@ -6,6 +6,30 @@ import "./App.css";
 export interface AgentConfig {
   url: string;
   goal: string;
+}
+
+interface BuilderItem {
+  title: string;
+  whatToBuild: string;
+  expectedUser: string;
+  additionalContext: string;
+}
+
+interface BuilderPermissionRequest {
+  id: string;
+  message: string;
+}
+
+type BuilderSessionStatus = "starting" | "running" | "awaiting_approval" | "completed" | "failed";
+
+interface BuilderSession {
+  sessionId: string;
+  title: string;
+  status: BuilderSessionStatus;
+  summary: string;
+  previewUrl: string;
+  previewTick: number;
+  pendingPermission: BuilderPermissionRequest | null;
 }
 
 // The multi-step loading sequence shown between prompt submission and dashboard
@@ -133,6 +157,11 @@ Answer:
 "What do investors want someone to build right now?"`;
 
 export default function App() {
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (pathname === "/builder") {
+    return <BuilderPage />;
+  }
+
   const [view, setView] = useState<"prompt" | "loading" | "dashboard">("prompt");
   const [loadingStep, setLoadingStep] = useState<LoadingStep>(null);
   const [runId, setRunId] = useState("");
@@ -309,6 +338,311 @@ export default function App() {
   );
 }
 
+function BuilderPage() {
+  const [rawInput, setRawInput] = useState(`[{"title":"LawnCare Route Optimizer","whatToBuild":"A dispatch and route planning dashboard for local lawncare crews with one-click daily route optimization.","expectedUser":"Owner-operators of 2-15 person lawncare businesses.","additionalContext":"Mobile-first field workflow, weather-aware scheduling, and client ETA updates."}]`);
+  const [sessions, setSessions] = useState<BuilderSession[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const streamRefs = useRef<Record<string, EventSource>>({});
+  const refreshTimerRefs = useRef<Record<string, number>>({});
+
+  const normalizePreviewUrl = (previewUrl: string | null, sessionId: string): string => {
+    const fallback = `/api/webbuilder/sessions/${sessionId}/preview/index.html`;
+    const raw = previewUrl ?? fallback;
+    if (raw.startsWith("/webbuilder/")) return `/api${raw}`;
+    return raw;
+  };
+
+  const updateSession = (sessionId: string, patch: Partial<BuilderSession>) => {
+    setSessions((prev) =>
+      prev.map((session) => (session.sessionId === sessionId ? { ...session, ...patch } : session))
+    );
+  };
+
+  const stopSessionTimers = (sessionId: string) => {
+    const timer = refreshTimerRefs.current[sessionId];
+    if (timer) {
+      window.clearInterval(timer);
+      delete refreshTimerRefs.current[sessionId];
+    }
+  };
+
+  const closeStream = (sessionId: string) => {
+    const stream = streamRefs.current[sessionId];
+    if (stream) {
+      stream.close();
+      delete streamRefs.current[sessionId];
+    }
+    stopSessionTimers(sessionId);
+  };
+
+  const parseItems = (raw: string): BuilderItem[] => {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      throw new Error("Input must be a non-empty JSON array.");
+    }
+
+    return parsed.map((item) => {
+      if (typeof item !== "object" || item === null) throw new Error("Each item must be an object.");
+      const candidate = item as Partial<BuilderItem>;
+      if (
+        typeof candidate.title !== "string" ||
+        typeof candidate.whatToBuild !== "string" ||
+        typeof candidate.expectedUser !== "string" ||
+        typeof candidate.additionalContext !== "string"
+      ) {
+        throw new Error("Each item needs title, whatToBuild, expectedUser, and additionalContext strings.");
+      }
+      const normalized: BuilderItem = {
+        title: candidate.title.trim(),
+        whatToBuild: candidate.whatToBuild.trim(),
+        expectedUser: candidate.expectedUser.trim(),
+        additionalContext: candidate.additionalContext.trim(),
+      };
+      if (!normalized.title || !normalized.whatToBuild || !normalized.expectedUser || !normalized.additionalContext) {
+        throw new Error("All fields in each item must be non-empty.");
+      }
+      return normalized;
+    });
+  };
+
+  const summarizeOutputChunk = (text: string): string | null => {
+    const lines = text
+      .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const line = lines[i];
+      if (/permission|approve|deny/i.test(line)) return "Waiting for approval to continue.";
+      if (/write|edit|create|update|patch/i.test(line)) return "Agent is generating website files.";
+      if (/build|compile|test|npm|pnpm|yarn|run/i.test(line)) return "Agent is running checks and commands.";
+      if (/done|completed|finished/i.test(line)) return "Agent is finishing output.";
+      return line.length > 160 ? `${line.slice(0, 157)}...` : line;
+    }
+    return null;
+  };
+
+  const startStream = (sessionId: string) => {
+    closeStream(sessionId);
+    const es = new EventSource(`/api/webbuilder/sessions/${sessionId}/stream`);
+    streamRefs.current[sessionId] = es;
+
+    refreshTimerRefs.current[sessionId] = window.setInterval(() => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.sessionId === sessionId ? { ...session, previewTick: Date.now() } : session
+        )
+      );
+    }, 3000);
+
+    es.addEventListener("session", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        status: string;
+        pendingPermission: BuilderPermissionRequest | null;
+        previewUrl: string | null;
+      };
+      const status: BuilderSessionStatus =
+        payload.status === "completed" ? "completed"
+          : payload.status === "failed" ? "failed"
+            : payload.pendingPermission ? "awaiting_approval"
+              : "running";
+      updateSession(sessionId, {
+        status,
+        pendingPermission: payload.pendingPermission,
+        previewUrl: normalizePreviewUrl(payload.previewUrl, sessionId),
+      });
+    });
+
+    es.addEventListener("output", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { text: string };
+      const summary = summarizeOutputChunk(payload.text);
+      if (summary) updateSession(sessionId, { summary });
+    });
+
+    es.addEventListener("permission_request", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as BuilderPermissionRequest;
+      updateSession(sessionId, {
+        status: "awaiting_approval",
+        pendingPermission: payload,
+        summary: "Waiting for approval to continue.",
+      });
+    });
+
+    es.addEventListener("permission_result", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { decision: string };
+      updateSession(sessionId, {
+        status: "running",
+        pendingPermission: null,
+        summary: `Permission ${payload.decision.toUpperCase()} sent.`,
+      });
+    });
+
+    es.addEventListener("session_error", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { message: string };
+      updateSession(sessionId, {
+        status: "failed",
+        summary: `Error: ${payload.message}`,
+      });
+      closeStream(sessionId);
+    });
+
+    es.addEventListener("done", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { status: "completed" | "failed"; previewUrl: string | null };
+      updateSession(sessionId, {
+        status: payload.status === "completed" ? "completed" : "failed",
+        pendingPermission: null,
+        previewUrl: normalizePreviewUrl(payload.previewUrl, sessionId),
+        summary: payload.status === "completed" ? "Website prototype completed." : "Website prototype failed.",
+      });
+      closeStream(sessionId);
+    });
+
+    es.onerror = () => {
+      updateSession(sessionId, { status: "failed", summary: "Stream connection interrupted." });
+      closeStream(sessionId);
+    };
+  };
+
+  const handlePermission = async (sessionId: string, decision: "approve" | "deny") => {
+    try {
+      const res = await fetch(`/api/webbuilder/sessions/${sessionId}/permission`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({ detail: "Unable to send decision." }));
+        updateSession(sessionId, { summary: `Permission error: ${payload.detail ?? payload.error ?? "Unknown error"}` });
+      }
+    } catch (err) {
+      updateSession(sessionId, { summary: `Network error: ${(err as Error).message}` });
+    }
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    for (const id of Object.keys(streamRefs.current)) closeStream(id);
+    setSessions([]);
+
+    try {
+      const items = parseItems(rawInput);
+      const res = await fetch("/api/webbuilder/sessions/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({ detail: "Failed to start sessions." }));
+        throw new Error(payload.detail ?? payload.error ?? `HTTP ${res.status}`);
+      }
+
+      const data = await res.json() as { sessions: Array<{ sessionId: string; title: string }> };
+      const initial = data.sessions.map((s) => ({
+        sessionId: s.sessionId,
+        title: s.title,
+        status: "starting" as BuilderSessionStatus,
+        summary: "Session starting up.",
+        previewUrl: `/api/webbuilder/sessions/${s.sessionId}/preview/index.html`,
+        previewTick: Date.now(),
+        pendingPermission: null,
+      }));
+      setSessions(initial);
+      for (const session of data.sessions) startStream(session.sessionId);
+    } catch (err) {
+      setSessions([{
+        sessionId: "builder-error",
+        title: "Request failed",
+        status: "failed",
+        summary: (err as Error).message,
+        previewUrl: "",
+        previewTick: Date.now(),
+        pendingPermission: null,
+      }]);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      for (const id of Object.keys(streamRefs.current)) closeStream(id);
+    };
+  }, []);
+
+  return (
+    <div className="builder-page">
+      <header className="builder-header">
+        <h1>Grass Builder</h1>
+        <p>Submit JSON build specs to run isolated WebBuilder prototype generation.</p>
+      </header>
+
+      <main className="builder-main">
+        <section className="builder-input-card">
+          <form onSubmit={handleSubmit}>
+            <label htmlFor="builder-json">Build specs JSON array</label>
+            <textarea
+              id="builder-json"
+              value={rawInput}
+              onChange={(e) => setRawInput(e.target.value)}
+              rows={10}
+              spellCheck={false}
+            />
+            <button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Starting..." : "Run WebBuilder"}
+            </button>
+          </form>
+        </section>
+
+        <section className="builder-sessions-grid">
+          {sessions.map((session) => (
+            <article key={session.sessionId} className="builder-session-card">
+              <div className="builder-session-top">
+                <h2>{session.title}</h2>
+                <span className={`builder-status-pill ${session.status}`}>{formatBuilderStatus(session.status)}</span>
+              </div>
+              <p className="builder-session-summary">{session.summary}</p>
+              {session.pendingPermission && (
+                <div className="builder-permission">
+                  <p>{session.pendingPermission.message}</p>
+                  <div className="builder-permission-actions">
+                    <button type="button" onClick={() => handlePermission(session.sessionId, "approve")}>Approve</button>
+                    <button type="button" className="deny" onClick={() => handlePermission(session.sessionId, "deny")}>Deny</button>
+                  </div>
+                </div>
+              )}
+              {session.previewUrl ? (
+                <iframe
+                  src={`${session.previewUrl}?t=${session.previewTick}`}
+                  title={`${session.title} preview`}
+                  className="builder-preview"
+                />
+              ) : (
+                <div className="builder-preview-placeholder">
+                  Site is being generated...
+                </div>
+              )}
+            </article>
+          ))}
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function formatBuilderStatus(status: BuilderSessionStatus): string {
+  switch (status) {
+    case "starting": return "Starting";
+    case "running": return "Running";
+    case "awaiting_approval": return "Needs Approval";
+    case "completed": return "Completed";
+    case "failed": return "Failed";
+    default: return "Unknown";
+  }
+}
+
 // ── Loading step indicator ───────────────────────────────────────────────────
 
 function LoadingStepIndicator({
@@ -346,7 +680,7 @@ function LoadingStepIndicator({
 export function YCIcon() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect width="24" height="24" rx="4" fill="#ff6701" />
+      <rect width="24" height="24" rx="4" fill="#46a546" />
       <path d="M12.6,15 L12.6,20 L11.4,20 L11.4,15 L6.5,6 L8,6 L12,13.5 L16,6 L17.5,6 L12.6,15 Z" fill="#ffffff" />
     </svg>
   );

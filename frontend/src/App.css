@@ -6,7 +6,7 @@
   /* Faint grid texture for depth — avoids flat-white genericness */
   background-color: var(--black);
   background-image:
-    radial-gradient(circle at 50% 0%, rgba(255, 103, 1, 0.15) 0%, rgba(0,0,0,0) 60%),
+    radial-gradient(circle at 50% 0%, rgba(112, 196, 99, 0.2) 0%, rgba(0,0,0,0) 60%),
     linear-gradient(var(--border) 1px, transparent 1px),
     linear-gradient(90deg, var(--border) 1px, transparent 1px);
   background-size: 100% 100%, 48px 48px, 48px 48px;
@@ -169,12 +169,12 @@
   justify-content: center;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
-  box-shadow: 0 2px 8px rgba(255, 103, 1, 0.35);
+  box-shadow: 0 2px 8px rgba(70, 165, 70, 0.35);
 }
 
 .send-btn:hover {
   background: var(--blue-dark);
-  box-shadow: 0 4px 16px rgba(255, 103, 1, 0.45);
+  box-shadow: 0 4px 16px rgba(70, 165, 70, 0.45);
 }
 
 .send-btn:active {
@@ -195,13 +195,13 @@
   font-size: 18px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 8px 32px rgba(255, 103, 1, 0.4);
+  box-shadow: 0 8px 32px rgba(70, 165, 70, 0.4);
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .launch-btn-modern:hover {
   transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 12px 40px rgba(255, 103, 1, 0.6);
+  box-shadow: 0 12px 40px rgba(70, 165, 70, 0.55);
 }
 
 .launch-btn-modern svg {
@@ -277,4 +277,194 @@
   font-size: 14px;
   color: var(--ink-muted);
   margin: 0;
+}
+
+/* ── /builder page ─────────────────────────────────────────────── */
+.builder-page {
+  min-height: 100svh;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(129, 207, 93, 0.16), transparent 42%),
+    radial-gradient(circle at 90% 100%, rgba(59, 126, 46, 0.12), transparent 38%),
+    linear-gradient(180deg, #ffffff 0%, #f6fbf4 100%);
+  color: var(--ink);
+  padding: 24px;
+}
+
+.builder-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(34px, 6vw, 54px);
+  letter-spacing: -0.5px;
+}
+
+.builder-header p {
+  margin: 8px 0 0;
+  color: var(--ink-muted);
+}
+
+.builder-main {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.builder-input-card {
+  background: #ffffff;
+  border: 1px solid #cfe3ca;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.builder-input-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.builder-input-card label {
+  color: var(--ink-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.builder-input-card textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid #b8d6b3;
+  background: #ffffff;
+  color: #233923;
+  padding: 10px;
+  font-family: "DM Sans", monospace;
+}
+
+.builder-input-card button {
+  align-self: flex-start;
+  border: 1px solid #4ea251;
+  border-radius: 10px;
+  padding: 8px 14px;
+  background: #2f7e3b;
+  color: #f3ffe9;
+  cursor: pointer;
+}
+
+.builder-input-card button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.builder-sessions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 14px;
+}
+
+.builder-session-card {
+  background: #ffffff;
+  border: 1px solid #cfe3ca;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.builder-session-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.builder-session-top h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.builder-session-summary {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.builder-preview {
+  width: 100%;
+  min-height: 250px;
+  border: 1px solid #b8d6b3;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.builder-preview-placeholder {
+  width: 100%;
+  min-height: 250px;
+  border: 1px dashed #b8d6b3;
+  border-radius: 9px;
+  background: #f7fcf5;
+  display: grid;
+  place-items: center;
+  color: #4e6a4e;
+  font-size: 14px;
+}
+
+.builder-permission {
+  border: 1px solid #8fbe89;
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(118, 178, 92, 0.12);
+}
+
+.builder-permission p {
+  margin: 0;
+  color: #355335;
+  font-size: 12px;
+}
+
+.builder-permission-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.builder-permission-actions button {
+  border: 1px solid #4d9b53;
+  border-radius: 8px;
+  padding: 6px 9px;
+  background: #2c7335;
+  color: #efffe6;
+  cursor: pointer;
+}
+
+.builder-permission-actions button.deny {
+  border-color: #a94747;
+  background: #6f2d2d;
+}
+
+.builder-status-pill {
+  border: 1px solid #386e40;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #b9dfb2;
+}
+
+.builder-status-pill.starting,
+.builder-status-pill.running {
+  border-color: #6dc764;
+  color: #a9ef9f;
+}
+
+.builder-status-pill.awaiting_approval {
+  border-color: #b2e06f;
+  color: #def7a9;
+}
+
+.builder-status-pill.completed {
+  border-color: #7fff6a;
+  color: #baffae;
+}
+
+.builder-status-pill.failed {
+  border-color: #e26d6d;
+  color: #ffbaba;
 }
