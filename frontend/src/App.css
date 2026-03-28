@@ -57,9 +57,9 @@
 
 .text-input {
   flex: 1;
-  height: 52px;
-  padding: 0 22px;
-  border-radius: 26px; /* pill */
+  min-height: 52px;
+  padding: 14px 22px;
+  border-radius: 20px;
   border: none;
   background: #fff;
   font-family: var(--font-body);
@@ -69,6 +69,21 @@
   outline: none;
   box-shadow: var(--shadow-input);
   transition: box-shadow 0.2s ease;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* ── Spinner animation ─────────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+.send-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .text-input::placeholder {
@@ -109,4 +124,66 @@
 .send-btn:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 3px;
+}
+
+/* ── Loading sequence ────────────────────────────────────────────── */
+.loading-sequence {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.loading-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  opacity: 0.35;
+  transition: opacity 0.4s ease;
+}
+.loading-step.active,
+.loading-step.done {
+  opacity: 1;
+}
+
+.loading-step-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.checkmark {
+  font-size: 18px;
+  font-weight: 700;
+  color: #22C55E;
+}
+
+.loading-step-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.loading-step-label {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--ink);
+  margin: 0;
+}
+
+.loading-step-detail {
+  font-size: 14px;
+  color: var(--ink-muted);
+  margin: 0;
 }
