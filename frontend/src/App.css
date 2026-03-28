@@ -1,0 +1,112 @@
+/* ── Page shell ─────────────────────────────────────────────────── */
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  /* Faint grid texture for depth — avoids flat-white genericness */
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center center;
+}
+
+/* ── Wordmark ────────────────────────────────────────────────────── */
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 36px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+  /* sits at top-left, not centered — gives editorial asymmetry */
+  align-self: flex-start;
+}
+
+/* ── Center area ─────────────────────────────────────────────────── */
+.center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 0 24px 80px; /* shift optical center slightly upward */
+}
+
+/* ── Tagline ─────────────────────────────────────────────────────── */
+.tagline {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: clamp(28px, 5vw, 42px);
+  color: var(--blue);
+  letter-spacing: -0.5px;
+  text-align: center;
+}
+
+/* ── Input row ───────────────────────────────────────────────────── */
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 620px;
+}
+
+.text-input {
+  flex: 1;
+  height: 52px;
+  padding: 0 22px;
+  border-radius: 26px; /* pill */
+  border: none;
+  background: #fff;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ink);
+  outline: none;
+  box-shadow: var(--shadow-input);
+  transition: box-shadow 0.2s ease;
+}
+
+.text-input::placeholder {
+  color: var(--ink-muted);
+  font-weight: 300;
+}
+
+.text-input:focus {
+  box-shadow: var(--shadow-input-focus);
+}
+
+/* ── Send button ─────────────────────────────────────────────────── */
+.send-btn {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-btn);
+  border: none;
+  background: var(--blue);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  box-shadow: 0 2px 8px rgba(59, 123, 248, 0.35);
+}
+
+.send-btn:hover {
+  background: var(--blue-dark);
+  box-shadow: 0 4px 16px rgba(59, 123, 248, 0.45);
+}
+
+.send-btn:active {
+  transform: scale(0.94);
+}
+
+.send-btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
