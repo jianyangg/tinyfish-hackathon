@@ -121,6 +121,14 @@
   transform: scale(0.94);
 }
 
+/* Standalone launch button on the landing page (no text input) */
+.launch-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  box-shadow: 0 4px 20px rgba(59, 123, 248, 0.4);
+}
+
 .send-btn:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 3px;

@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import Dashboard, { type IdeaData } from "./Dashboard";
 import "./App.css";
 
@@ -11,19 +11,137 @@ export interface AgentConfig {
 // The multi-step loading sequence shown between prompt submission and dashboard
 type LoadingStep = "decomposing" | "spawning" | null;
 
+// ── Hardcoded discovery prompt ───────────────────────────────────────────────
+const DISCOVERY_PROMPT = `You are an AI Venture Capital Intelligence Agent.
+
+Your task is to identify high-quality, recent, and high-conviction startup ideas that venture capital firms explicitly want founders to build.
+
+Focus only on RECENT content (last ~3 months). Freshness is critical.
+
+---
+
+OBJECTIVE
+
+Identify and synthesize startup ideas that:
+- Are explicitly requested or strongly implied by VCs
+- Reflect real, current market demand
+- Are scalable and fundable
+- Are grounded in recent investor thinking
+
+---
+
+PRIMARY SOURCES (PRIORITIZE)
+
+Search and extract from:
+
+1. https://www.ycombinator.com/rfs
+2. https://www.venturewishlist.com/
+3. Google News search: "VC startup ideas wishlist" (filter: last 3 months)
+4. Google search (filter: last 3 months):
+   - "venture capital wishlist startups 2026"
+   - "investors want founders to build"
+   - "startup ideas VC thesis"
+   - "latest startup trends venture capital"
+5. Recent VC blogs:
+   - a16z (Andreessen Horowitz)
+   - Sequoia Capital
+   - NFX
+   - Founders Fund
+6. High-signal publications:
+   - TechCrunch
+   - Inc
+   - Relevant Substack or investor blogs
+
+---
+
+TIME CONSTRAINT
+
+Only use content published within the last ~3 months.
+
+If older:
+- Ignore it, unless referenced in a recent source
+
+---
+
+EXTRACTION LOGIC
+
+For each source:
+- Extract explicit wishlist ideas, or
+- Infer strong investor intent from:
+  - repeated themes
+  - problem statements
+  - capital allocation signals
+
+Focus on real gaps and emerging opportunities.
+
+Avoid generic or saturated ideas.
+
+---
+
+SYNTHESIS
+
+Do not list raw ideas.
+
+You must:
+- Combine signals across sources
+- Refine into clear, actionable startup concepts
+- Elevate into investor-grade opportunities
+
+Each idea should feel fundable today.
+
+---
+
+OUTPUT FORMAT
+
+Return ideas neatly arranged in text as well as the source
+
+For each idea:
+
+1. Idea Title
+2. Core Idea (1–2 sentences)
+3. Why VCs Want This (link to investor signals)
+4. Market Opportunity (why now)
+5. Differentiation Angle
+6. Source Signals (URLs)
+7. Confidence Level (High / Medium / Low)
+
+---
+
+QUALITY BAR
+
+Include only ideas that:
+- Are backed by recent investor signals
+- Are non-obvious and non-generic
+- Have clear commercial potential
+
+---
+
+DO NOT
+
+- Include outdated ideas (>3 months)
+- Output raw links without synthesis
+- Include low-quality or obvious ideas
+- Hallucinate sources
+
+---
+
+FINAL INSTRUCTION
+
+Act as a top-tier VC analyst.
+
+Answer:
+"What do investors want someone to build right now?"`;
+
 export default function App() {
-  const [query, setQuery] = useState("");
   const [view, setView] = useState<"prompt" | "loading" | "dashboard">("prompt");
   const [loadingStep, setLoadingStep] = useState<LoadingStep>(null);
   const [runId, setRunId] = useState("");
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [phase, setPhase] = useState<"discovery" | "iteration">("discovery");
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    const trimmed = query.trim();
-    if (!trimmed || view === "loading") return;
+  async function handleLaunch(e?: FormEvent) {
+    if (e) e.preventDefault();
+    if (view === "loading") return;
 
     setPhase("discovery");
     setView("loading");
@@ -33,7 +151,7 @@ export default function App() {
       const res = await fetch("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: trimmed }),
+        body: JSON.stringify({ prompt: DISCOVERY_PROMPT }),
       });
       if (!res.ok) throw new Error(`Backend error: ${res.status}`);
 
@@ -108,7 +226,7 @@ export default function App() {
       <Dashboard
         runId={runId}
         agents={agents}
-        prompt={query}
+        prompt={DISCOVERY_PROMPT}
         phase={phase}
         onBack={() => { setView("prompt"); setPhase("discovery"); }}
         onIterate={handleIterate}
@@ -165,28 +283,11 @@ export default function App() {
       </header>
 
       <main className="center">
-        <p className="tagline">Ask anything.</p>
+        <p className="tagline">What do investors want built right now?</p>
 
-        <form className="input-row" onSubmit={handleSubmit}>
-          <textarea
-            ref={inputRef}
-            className="text-input"
-            placeholder="What do you want to know?"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit(e);
-              }
-            }}
-            autoFocus
-            rows={3}
-          />
-          <button className="send-btn" type="submit" aria-label="Send">
-            <ArrowIcon />
-          </button>
-        </form>
+        <button className="send-btn launch-btn" onClick={handleLaunch} aria-label="Launch">
+          <ArrowIcon />
+        </button>
       </main>
     </div>
   );
