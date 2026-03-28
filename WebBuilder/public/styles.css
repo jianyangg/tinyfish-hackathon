@@ -1,0 +1,197 @@
+:root {
+  --bg: #0b1220;
+  --card: #131d31;
+  --line: #223556;
+  --text: #ecf2ff;
+  --muted: #9eb4da;
+  --accent: #35d0a0;
+  --danger: #ff6e6e;
+  --warn: #ffcc66;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Avenir Next", "Manrope", "Trebuchet MS", sans-serif;
+  background: radial-gradient(circle at top, #182646 0%, var(--bg) 55%);
+  color: var(--text);
+}
+
+.app-shell {
+  width: min(960px, 92vw);
+  margin: 2rem auto 3rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.sessions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.session-card h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.summary-text {
+  margin: 0.8rem 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.card {
+  background: linear-gradient(160deg, rgba(19, 29, 49, 0.96), rgba(11, 18, 32, 0.94));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 18px 35px rgba(0, 0, 0, 0.25);
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+}
+
+.hero p {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+}
+
+label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #0d1629;
+  color: var(--text);
+  padding: 0.8rem;
+  resize: vertical;
+  min-height: 120px;
+  font-size: 1rem;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+#submit-btn {
+  margin-top: 0.8rem;
+  width: 100%;
+  padding: 0.85rem;
+  background: var(--accent);
+  color: #022519;
+}
+
+.actions {
+  display: flex;
+  gap: 0.7rem;
+}
+
+.actions button {
+  flex: 1;
+  padding: 0.7rem;
+  color: #111;
+}
+
+.approve {
+  background: var(--accent);
+}
+
+.deny {
+  background: var(--danger);
+}
+
+.preview-wrap {
+  margin-top: 0.8rem;
+  min-height: 280px;
+}
+
+.preview-wrap h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.preview-frame {
+  margin-top: 0.7rem;
+  width: 100%;
+  min-height: 220px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.expand-btn {
+  margin-top: 0.65rem;
+  padding: 0.55rem 0.8rem;
+  background: #73b8ff;
+  color: #05213f;
+}
+
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  background: rgba(255, 204, 102, 0.2);
+  color: var(--warn);
+  border: 1px solid rgba(255, 204, 102, 0.45);
+}
+
+.permission-panel {
+  margin-top: 0.8rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(13, 22, 41, 0.7);
+}
+
+.permission-panel p {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    width: 95vw;
+    margin-top: 1rem;
+  }
+
+  .sessions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    padding: 0.85rem;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+}
