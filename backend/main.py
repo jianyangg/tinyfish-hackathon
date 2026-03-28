@@ -329,11 +329,24 @@ async def _run_synthesis(run_id: str):
             ],
             temperature=0.4,
         )
-        synthesis = response.choices[0].message.content
-        logger.info("Run %s: synthesis complete", run_id)
+        raw = response.choices[0].message.content.strip()
+
+        # Strip markdown code fences if the model wraps the JSON (same guard as decomposition)
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1]
+            raw = raw.rsplit("```", 1)[0]
+
+        # Validate it's a JSON array before storing — surface parse errors early
+        ideas = json.loads(raw)
+        if not isinstance(ideas, list):
+            raise ValueError(f"Synthesis returned non-list JSON: {type(ideas)}")
+
+        # Store as a JSON string so the frontend receives a consistent wire format
+        synthesis = json.dumps(ideas)
+        logger.info("Run %s: synthesis complete (%d ideas)", run_id, len(ideas))
     except Exception as exc:
         logger.exception("Run %s: synthesis failed", run_id)
-        synthesis = f"Synthesis failed: {exc}"
+        synthesis = json.dumps({"error": str(exc)})
 
     run["synthesis"] = synthesis
 

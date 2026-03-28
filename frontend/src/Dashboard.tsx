@@ -441,67 +441,76 @@ function SynthesisLoading() {
   );
 }
 
+// ── Synthesis types ───────────────────────────────────────────────────────────
+
+interface IdeaData {
+  rank: number;
+  title: string;
+  what_to_build: string;
+  first_customer_and_distribution: string;
+  vc_signal: string;
+  why_now: string;
+}
+
 // ── Synthesis view ────────────────────────────────────────────────────────────
-// Parses the text output from the synthesis prompt (which uses --- separators
-// and labelled sections) into structured idea cards.
+// The backend now returns a JSON array of IdeaData objects. We parse once here
+// and pass typed structs down to IdeaCard, avoiding fragile regex text parsing.
 
 function SynthesisView({ text }: { text: string }) {
-  // Split on --- delimiters, drop empty chunks
-  const chunks = text.split(/^---$/m).map((c) => c.trim()).filter(Boolean);
+  let ideas: IdeaData[] = [];
+  let parseError: string | null = null;
+
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      ideas = parsed as IdeaData[];
+    } else if (parsed.error) {
+      parseError = parsed.error;
+    } else {
+      parseError = "Unexpected response shape";
+    }
+  } catch {
+    parseError = `Could not parse synthesis: ${text.slice(0, 200)}`;
+  }
 
   return (
     <div className="synthesis-view">
       <h1 className="synthesis-title">Draft ideas</h1>
-      <div className="synthesis-ideas">
-        {chunks.map((chunk, idx) => <IdeaCard key={idx} raw={chunk} />)}
-      </div>
+      {parseError ? (
+        <pre className="synthesis-error">{parseError}</pre>
+      ) : (
+        <div className="synthesis-ideas">
+          {ideas.map((idea) => <IdeaCard key={idea.rank} idea={idea} />)}
+        </div>
+      )}
     </div>
   );
 }
 
-// Section labels from the synthesis prompt
-const SECTION_LABELS = ["WHAT TO BUILD", "FIRST CUSTOMER & DISTRIBUTION", "VC SIGNAL", "WHY NOW", "CONVICTION SCORE"];
+const IDEA_SECTIONS: { key: keyof IdeaData; label: string }[] = [
+  { key: "what_to_build",                   label: "WHAT TO BUILD" },
+  { key: "first_customer_and_distribution", label: "FIRST CUSTOMER & DISTRIBUTION" },
+  { key: "vc_signal",                       label: "VC SIGNAL" },
+  { key: "why_now",                         label: "WHY NOW" },
+];
 
-function IdeaCard({ raw }: { raw: string }) {
-  const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
-
-  // First line is the rank + title: "#1. Some Title"
-  const titleLine = lines[0] ?? "";
-  const titleMatch = titleLine.match(/^#(\d+)\.\s+(.+)$/);
-  const rank = titleMatch ? parseInt(titleMatch[1]) : null;
-  const title = titleMatch ? titleMatch[2] : titleLine;
-
-  // Parse remaining lines into labelled sections
-  const sections: { label: string; content: string[] }[] = [];
-  let current: { label: string; content: string[] } | null = null;
-
-  for (const line of lines.slice(1)) {
-    const matchedLabel = SECTION_LABELS.find((l) => line.startsWith(l));
-    if (matchedLabel) {
-      if (current) sections.push(current);
-      current = { label: matchedLabel, content: [] };
-    } else if (current) {
-      current.content.push(line);
-    }
-  }
-  if (current) sections.push(current);
-
-  // Top 3 get distinct accent colors; #4–8 fade through grey-blue tones
+function IdeaCard({ idea }: { idea: IdeaData }) {
+  // Top 3 get distinct accent colors; #4–8 fade through varied tones
   const rankColors = ["#3B7BF8", "#22C55E", "#F59E0B", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#6B7280"];
-  const rankColor = rank ? (rankColors[rank - 1] ?? "#6B7280") : "#6B7280";
+  const rankColor = rankColors[(idea.rank - 1)] ?? "#6B7280";
 
   return (
     <div className="idea-card">
       <div className="idea-card-header" style={{ borderLeftColor: rankColor }}>
-        {rank && <span className="idea-rank" style={{ color: rankColor }}>#{rank}</span>}
-        <h2 className="idea-title">{title}</h2>
+        <span className="idea-rank" style={{ color: rankColor }}>#{idea.rank}</span>
+        <h2 className="idea-title">{idea.title}</h2>
       </div>
 
       <div className="idea-sections">
-        {sections.map(({ label, content }) => (
-          <div key={label} className="idea-section">
+        {IDEA_SECTIONS.map(({ key, label }) => (
+          <div key={key} className="idea-section">
             <p className="idea-section-label">{label}</p>
-            <p className="idea-section-content">{content.join(" ")}</p>
+            <p className="idea-section-content">{idea[key] as string}</p>
           </div>
         ))}
       </div>

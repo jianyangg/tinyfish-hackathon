@@ -56,12 +56,11 @@ Your job: synthesise this raw research into a MAXIMUM OF 8 startup ideas, \
 ranked #1 (highest conviction) to #8 (lowest conviction).
 
 ━━━ RANKING RUBRIC ━━━
-Score each idea on these five axes (1–5 each). Higher total = higher rank.
+Rank by a holistic read across these four axes:
   A. Investor signal strength   — how explicitly and recently have VCs asked for this?
   B. Problem sharpness          — is there a clearly articulated pain, not just a trend?
   C. Market timing              — why is NOW the right moment (regulation, technology, behaviour shift)?
   D. Whitespace                 — how absent are credible incumbents or well-funded startups?
-  E. Founder wedge              — can a 2-person team build an initial version in <3 months?
 
 ━━━ CONCRETENESS RULES ━━━
 Every idea MUST answer "what exactly would you build?" — not "a platform for X".
@@ -74,32 +73,24 @@ Every idea MUST answer "what exactly would you build?" — not "a platform for X
   • Do NOT list raw agent outputs. Only the synthesised, elevated version
 
 ━━━ OUTPUT FORMAT ━━━
-Output ONLY the following structure, repeated for each idea. No preamble, no conclusion.
+Respond with ONLY a valid JSON array — no markdown fences, no explanation.
+Each element must conform exactly to this schema:
 
----
-#[RANK]. [IDEA TITLE — 5 words max, punchy]
-
-WHAT TO BUILD
-[2–3 sentences. Specific product, not a category. Name the thing.]
-
-FIRST CUSTOMER & DISTRIBUTION
-[1–2 sentences. Who exactly, and how do you reach them in week 1.]
-
-VC SIGNAL
-[1–2 sentences. Which investors/sources are asking for this, and how recently. \
-Cite the specific source the agent found — e.g. YC RFS 2025, a16z blog Jan 2026.]
-
-WHY NOW
-[1–2 sentences. The specific unlock — model capability, regulation, market event — \
-that makes this fundable today but wasn't possible 12 months ago.]
-
-CONVICTION SCORE
-[Format: A=N B=N C=N D=N E=N  →  Total: NN/25]
----
+[
+  {{
+    "rank": 1,
+    "title": "<5 words max, punchy>",
+    "what_to_build": "<2-3 sentences. Specific product, not a category. Name the thing.>",
+    "first_customer_and_distribution": "<1-2 sentences. Who exactly, and how do you reach them in week 1.>",
+    "vc_signal": "<1-2 sentences. Which investors/sources are asking for this, and how recently. Cite the specific source the agent found.>",
+    "why_now": "<1-2 sentences. The specific unlock — model capability, regulation, market event — that makes this fundable today but wasn't possible 12 months ago.>"
+  }}
+]
 
 ━━━ HARD CONSTRAINTS ━━━
   • Maximum 8 ideas. If you only have conviction on fewer, output fewer.
   • No generic ideas (AI copilot for X, marketplace for Y) unless extremely specific
   • Do not hallucinate sources — only cite what the agents actually found
   • Ranked #1 must be the idea you would write a first cheque for TODAY
+  • Output ONLY the JSON array. Any non-JSON text will break the parser.
 """
