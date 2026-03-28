@@ -41,6 +41,8 @@ export default function Dashboard({ runId, agents, prompt, onBack }: DashboardPr
   const [synthesis, setSynthesis] = useState<string | null>(null);
   // "agents" = main view; "synthesis" = full-screen synthesis panel
   const [view, setView] = useState<"agents" | "synthesis">("agents");
+  // "focus" = sidebar + single agent detail; "grid" = all agents in a grid
+  const [layout, setLayout] = useState<"focus" | "grid">("focus");
 
   const [splitPct, setSplitPct] = useState(65);
   const rightPanelRef = useRef<HTMLElement>(null);
@@ -175,6 +177,26 @@ export default function Dashboard({ runId, agents, prompt, onBack }: DashboardPr
         <p className="header-prompt" title={prompt}>
           {prompt.length > 100 ? prompt.slice(0, 100) + "…" : prompt}
         </p>
+        {/* ── Layout toggle ── */}
+        <div className="layout-toggle">
+          <button
+            className={`layout-btn ${layout === "focus" ? "active" : ""}`}
+            onClick={() => setLayout("focus")}
+            title="Focus view"
+            aria-label="Focus view"
+          >
+            <FocusIcon />
+          </button>
+          <button
+            className={`layout-btn ${layout === "grid" ? "active" : ""}`}
+            onClick={() => setLayout("grid")}
+            title="Grid view"
+            aria-label="Grid view"
+          >
+            <GridIcon />
+          </button>
+        </div>
+
         <button
           className={`synthesise-btn ${canForceSynth ? "ready" : ""}`}
           disabled={!canForceSynth}
@@ -185,76 +207,146 @@ export default function Dashboard({ runId, agents, prompt, onBack }: DashboardPr
         </button>
       </header>
 
-      {/* ── Sidebar ── */}
-      <aside className="sidebar">
-        {agentStates.map((agent) => (
-          <button
-            key={agent.id}
-            className={`agent-card ${selectedAgent === agent.id ? "selected" : ""}`}
-            onClick={() => setSelectedAgent(agent.id)}
-          >
-            <div className="agent-card-top">
-              <span className={`status-dot ${agent.status}`} />
-              <span className="agent-label">Agent {agent.id + 1}</span>
-            </div>
-            <p className="agent-goal">{agent.goal}</p>
-          </button>
-        ))}
-      </aside>
-
-      {/* ── Right panel ── */}
-      <section
-        className="right-panel"
-        ref={rightPanelRef}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-      >
-        <div className="iframe-container" style={{ flexBasis: `${splitPct}%` }}>
-          {showCompletedState ? (
-            <div className="iframe-placeholder completed">
-              <span className="completed-check">✓</span>
-              <p className="completed-label">Session complete</p>
-              <p className="completed-sub">{selected.url}</p>
-            </div>
-          ) : selected.streamingUrl ? (
-            <iframe
-              key={selected.streamingUrl}
-              src={selected.streamingUrl}
-              title={`Agent ${selected.id + 1} live preview`}
-            />
-          ) : (
-            <div className="iframe-placeholder">
-              <div className={`placeholder-spinner ${selected.status === "error" ? "error" : ""}`}>
-                {selected.status === "error" ? "⚠" : "◎"}
+      {/* ── Grid view ── */}
+      {layout === "grid" && (
+        <div className="grid-main">
+          {agentStates.map((agent) => {
+            const isCompleted = agent.status === "complete" && agent.streamingUrl;
+            return (
+              <div
+                key={agent.id}
+                className={`grid-cell ${agent.status}`}
+                onClick={() => { setLayout("focus"); setSelectedAgent(agent.id); }}
+                title="Click to focus this agent"
+              >
+                <div className="grid-cell-header">
+                  <span className={`status-dot ${agent.status}`} />
+                  <span className="grid-cell-label">Agent {agent.id + 1}</span>
+                  <span className="grid-cell-goal">{agent.goal}</span>
+                </div>
+                <div className="grid-cell-iframe">
+                  {isCompleted ? (
+                    <div className="iframe-placeholder completed">
+                      <span className="completed-check">✓</span>
+                      <p className="completed-label">Session complete</p>
+                    </div>
+                  ) : agent.streamingUrl ? (
+                    <iframe
+                      key={agent.streamingUrl}
+                      src={agent.streamingUrl}
+                      title={`Agent ${agent.id + 1} live preview`}
+                    />
+                  ) : (
+                    <div className="iframe-placeholder">
+                      <div className={`placeholder-spinner ${agent.status === "error" ? "error" : ""}`}>
+                        {agent.status === "error" ? "⚠" : "◎"}
+                      </div>
+                      <p>{agent.status === "error" ? "Error" : "Waiting…"}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-              <p>{selected.status === "error" ? "Agent encountered an error" : "Waiting for browser session…"}</p>
-            </div>
-          )}
+            );
+          })}
         </div>
+      )}
 
-        <div className="resize-handle" onPointerDown={onDividerPointerDown} title="Drag to resize" />
-
-        <div className="stream-panel" style={{ flexBasis: `${100 - splitPct}%` }}>
-          <div className="stream-content">
-            {selected.events.map((ev, idx) => (
-              <div key={idx} className={`stream-line ${ev.type === "ERROR" ? "error" : ""}`}>
-                <span className="stream-type">{ev.type}</span>
-                <span className="stream-text">{ev.purpose || ev.message || JSON.stringify(ev)}</span>
+      {/* ── Focus view: Sidebar + Right panel ── */}
+      {layout === "focus" && <>
+        <aside className="sidebar">
+          {agentStates.map((agent) => (
+            <button
+              key={agent.id}
+              className={`agent-card ${selectedAgent === agent.id ? "selected" : ""}`}
+              onClick={() => setSelectedAgent(agent.id)}
+            >
+              <div className="agent-card-top">
+                <span className={`status-dot ${agent.status}`} />
+                <span className="agent-label">Agent {agent.id + 1}</span>
               </div>
-            ))}
+              <p className="agent-goal">{agent.goal}</p>
+            </button>
+          ))}
+        </aside>
 
-            {selected.result && (
-              <>
-                <div className="stream-separator">— Result —</div>
-                <ResultRenderer result={selected.result} />
-              </>
+        {/* ── Right panel ── */}
+        <section
+          className="right-panel"
+          ref={rightPanelRef}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+        >
+          <div className="iframe-container" style={{ flexBasis: `${splitPct}%` }}>
+            {showCompletedState ? (
+              <div className="iframe-placeholder completed">
+                <span className="completed-check">✓</span>
+                <p className="completed-label">Session complete</p>
+                <p className="completed-sub">{selected.url}</p>
+              </div>
+            ) : selected.streamingUrl ? (
+              <iframe
+                key={selected.streamingUrl}
+                src={selected.streamingUrl}
+                title={`Agent ${selected.id + 1} live preview`}
+              />
+            ) : (
+              <div className="iframe-placeholder">
+                <div className={`placeholder-spinner ${selected.status === "error" ? "error" : ""}`}>
+                  {selected.status === "error" ? "⚠" : "◎"}
+                </div>
+                <p>{selected.status === "error" ? "Agent encountered an error" : "Waiting for browser session…"}</p>
+              </div>
             )}
-
-            <div ref={streamEndRef} />
           </div>
-        </div>
-      </section>
+
+          <div className="resize-handle" onPointerDown={onDividerPointerDown} title="Drag to resize" />
+
+          <div className="stream-panel" style={{ flexBasis: `${100 - splitPct}%` }}>
+            <div className="stream-content">
+              {selected.events.map((ev, idx) => (
+                <div key={idx} className={`stream-line ${ev.type === "ERROR" ? "error" : ""}`}>
+                  <span className="stream-type">{ev.type}</span>
+                  <span className="stream-text">{ev.purpose || ev.message || JSON.stringify(ev)}</span>
+                </div>
+              ))}
+
+              {selected.result && (
+                <>
+                  <div className="stream-separator">— Result —</div>
+                  <ResultRenderer result={selected.result} />
+                </>
+              )}
+
+              <div ref={streamEndRef} />
+            </div>
+          </div>
+        </section>
+      </>}
     </div>
+  );
+}
+
+// ── Layout toggle icons ───────────────────────────────────────────────────────
+
+function FocusIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      {/* Two-column layout: narrow sidebar + wide main */}
+      <rect x="1" y="1" width="4" height="14" rx="1" fill="currentColor" opacity="0.5" />
+      <rect x="7" y="1" width="8" height="14" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      {/* 2×2 grid */}
+      <rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor" />
+      <rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor" />
+      <rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor" />
+      <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" />
+    </svg>
   );
 }
 
@@ -343,7 +435,7 @@ function SynthesisLoading() {
       <div className="synthesis-loading-inner">
         <div className="synthesis-spinner" />
         <p className="synthesis-loading-label">Synthesising agent results…</p>
-        <p className="synthesis-loading-sub">Combining findings and ranking the top 3 ideas</p>
+        <p className="synthesis-loading-sub">Combining findings and drafting up to 8 concrete ideas</p>
       </div>
     </div>
   );
@@ -359,7 +451,7 @@ function SynthesisView({ text }: { text: string }) {
 
   return (
     <div className="synthesis-view">
-      <h1 className="synthesis-title">Top ideas</h1>
+      <h1 className="synthesis-title">Draft ideas</h1>
       <div className="synthesis-ideas">
         {chunks.map((chunk, idx) => <IdeaCard key={idx} raw={chunk} />)}
       </div>
@@ -394,7 +486,8 @@ function IdeaCard({ raw }: { raw: string }) {
   }
   if (current) sections.push(current);
 
-  const rankColors = ["#3B7BF8", "#22C55E", "#F59E0B"];
+  // Top 3 get distinct accent colors; #4–8 fade through grey-blue tones
+  const rankColors = ["#3B7BF8", "#22C55E", "#F59E0B", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#6B7280"];
   const rankColor = rank ? (rankColors[rank - 1] ?? "#6B7280") : "#6B7280";
 
   return (

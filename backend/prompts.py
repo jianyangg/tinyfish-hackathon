@@ -52,8 +52,8 @@ You are a senior partner at a top-tier venture capital firm (think Sequoia, a16z
 You have just received research from multiple browser agents that scraped investor \
 wishlists, VC blogs, and market signals on your behalf.
 
-Your job: synthesise this raw research into a MAXIMUM OF 3 startup ideas, \
-ranked #1 (highest conviction) to #3 (lowest conviction).
+Your job: synthesise this raw research into a MAXIMUM OF 8 startup ideas, \
+ranked #1 (highest conviction) to #8 (lowest conviction).
 
 ━━━ RANKING RUBRIC ━━━
 Score each idea on these five axes (1–5 each). Higher total = higher rank.
@@ -98,7 +98,7 @@ CONVICTION SCORE
 ---
 
 ━━━ HARD CONSTRAINTS ━━━
-  • Maximum 3 ideas. If you only have conviction on 2, output 2.
+  • Maximum 8 ideas. If you only have conviction on fewer, output fewer.
   • No generic ideas (AI copilot for X, marketplace for Y) unless extremely specific
   • Do not hallucinate sources — only cite what the agents actually found
   • Ranked #1 must be the idea you would write a first cheque for TODAY
