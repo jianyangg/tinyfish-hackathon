@@ -1,6 +1,8 @@
 # 🍃 GoTouchGrass
 GoTouchGrass is an autonomous venture pipeline that eliminates "Analysis Paralysis" for founders who constantly pivot. It replaces months of "pivoting" and "ideating" with an agentic assembly line that finds real pain points from validated sources, validates them with brutal logic, and ships functional MVPs.
 
+https://www.canva.com/design/DAHFNNbls3E/efr81-NrnamavIPsvfhz-A/edit?utm_content=DAHFNNbls3E&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
+
 # The Problem
 Founders spend 90% of their time "thinking" about problems instead of solving them. The same applies to innovation studios across large enterprises that dedicate tons of time and resources to innovation and finding new ideas to adopt that solve real problems. We spent two hours arguing over a problem statement before realising the biggest issue is finding a real problem.
 
@@ -21,7 +23,7 @@ The "Kill" Factor: Is it safe from Big Tech (Google/Meta)?
 
 TAM/SAM/SOM: Is the prize big enough to bother?
 
-3. 🧱 ** Building Phase**
+3. 🧱 Building Phase
 The Building.
 With help from our dear friend Codex, our validated real solutions to identified problems can be brought to a reality.
 
