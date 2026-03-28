@@ -3,11 +3,16 @@ import json
 import asyncio
 import uuid
 import logging
+import re
+import shutil
+from pathlib import Path
+from typing import Any
 
 import httpx
 from openai import AsyncOpenAI
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from sse_starlette.sse import EventSourceResponse
@@ -32,6 +37,10 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 TINYFISH_API_KEY = os.getenv("TINYFISH_API_KEY", "")
 TINYFISH_SSE_URL = "https://agent.tinyfish.ai/v1/automation/run-sse"
 OPENAI_MODEL = "gpt-5.4"
+CODEX_BIN = os.getenv("CODEX_BIN", "codex")
+CODEX_ARGS = [arg for arg in os.getenv("CODEX_ARGS", "").split(" ") if arg]
+CODEX_ISOLATE_HOME = os.getenv("CODEX_ISOLATE_HOME", "false").lower() == "true"
+WEBBUILDER_TMP_ROOT = Path(__file__).resolve().parent / "tmp_webbuilder"
 
 openai_client = AsyncOpenAI()  # reads OPENAI_API_KEY from env automatically
 
@@ -50,6 +59,24 @@ app.add_middleware(
 # can replay them, plus a list of live subscriber queues for real-time fan-out.
 
 runs: dict[str, dict] = {}
+webbuilder_sessions: dict[str, dict[str, Any]] = {}
+
+PERMISSION_LINE_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\b(approve|allow|permission|grant access)\b.*\[(?:y|Y)/(?:n|N)\]"),
+    re.compile(r"\bDo you want to continue\?", re.IGNORECASE),
+    re.compile(r"\bNeed approval\b", re.IGNORECASE),
+]
+
+
+@app.on_event("startup")
+async def _startup_cleanup() -> None:
+    _clean_webbuilder_tmp_root()
+    WEBBUILDER_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+@app.on_event("shutdown")
+async def _shutdown_cleanup() -> None:
+    _clean_webbuilder_tmp_root()
 
 
 class RunRequest(BaseModel):
@@ -65,6 +92,25 @@ class RunFromTasksRequest(BaseModel):
     prompt: str                    # descriptive label for the run (shown in header)
     tasks: list[TaskSpec]
     auto_synthesise: bool = True
+
+
+class WebBuilderBuildSpec(BaseModel):
+    title: str
+    whatToBuild: str
+    expectedUser: str
+    additionalContext: str
+
+
+class WebBuilderSingleStartRequest(BaseModel):
+    item: WebBuilderBuildSpec
+
+
+class WebBuilderBatchStartRequest(BaseModel):
+    items: list[WebBuilderBuildSpec]
+
+
+class WebBuilderPermissionRequest(BaseModel):
+    decision: str
 
 
 # ── Shared run-creation logic ────────────────────────────────────────────────
@@ -111,6 +157,154 @@ def _create_run(
                 run_id, len(agents), auto_synthesise)
 
     return run_id, agents
+
+
+def _create_webbuilder_prompt(build_spec: WebBuilderBuildSpec) -> str:
+    return "\n".join([
+        "Create a frontend-only prototype webpage based on the product details.",
+        "Requirements:",
+        "- Build only static frontend assets (HTML/CSS/JS).",
+        "- Make it interactive if it helps demonstrate the concept, but do not include any backend code or server components.",
+        "- No backend code.",
+        "- Keep the prototype self-contained and visually polished.",
+        "- At the end, summarize which files were created.",
+        "",
+        f"Project title: {build_spec.title}",
+        f"What to build: {build_spec.whatToBuild}",
+        f"Expected user: {build_spec.expectedUser}",
+        f"Additional context: {build_spec.additionalContext}",
+    ])
+
+
+def _webbuilder_emit_event(session: dict[str, Any], event: str, payload: Any) -> None:
+    wrapped = {"event": event, "payload": payload}
+    session["history"].append(wrapped)
+    for queue in session["subscribers"]:
+        queue.put_nowait(wrapped)
+
+
+def _should_treat_as_permission_prompt(line: str) -> bool:
+    return any(pattern.search(line) for pattern in PERMISSION_LINE_PATTERNS)
+
+
+def _clean_webbuilder_tmp_root() -> None:
+    if WEBBUILDER_TMP_ROOT.exists():
+        shutil.rmtree(WEBBUILDER_TMP_ROOT, ignore_errors=True)
+
+
+async def _webbuilder_read_stream(
+    session_id: str,
+    stream: asyncio.StreamReader,
+    source: str,
+) -> None:
+    session = webbuilder_sessions[session_id]
+    while True:
+        chunk = await stream.readline()
+        if not chunk:
+            break
+
+        text = chunk.decode(errors="replace")
+        _webbuilder_emit_event(session, "output", {"source": source, "text": text})
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if session["pending_permission"] is None and _should_treat_as_permission_prompt(line):
+                permission = {"id": uuid.uuid4().hex, "message": line}
+                session["pending_permission"] = permission
+                _webbuilder_emit_event(session, "permission_request", permission)
+
+
+async def _start_webbuilder_session(build_spec: WebBuilderBuildSpec) -> dict[str, Any]:
+    session_id = uuid.uuid4().hex
+    run_directory = WEBBUILDER_TMP_ROOT / session_id
+    run_directory.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env["OTEL_SDK_DISABLED"] = "true"
+
+    if CODEX_ISOLATE_HOME:
+        codex_home = run_directory / ".codex"
+        codex_home.mkdir(parents=True, exist_ok=True)
+        env["CODEX_HOME"] = str(codex_home)
+
+    process = await asyncio.create_subprocess_exec(
+        CODEX_BIN,
+        *CODEX_ARGS,
+        "exec",
+        "--skip-git-repo-check",
+        "-s",
+        "workspace-write",
+        "-",
+        cwd=str(run_directory),
+        env=env,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    if process.stdin is None or process.stdout is None or process.stderr is None:
+        raise RuntimeError("Failed to initialize WebBuilder subprocess pipes.")
+
+    session: dict[str, Any] = {
+        "id": session_id,
+        "build_spec": build_spec.model_dump(),
+        "run_directory": run_directory,
+        "process": process,
+        "status": "running",
+        "pending_permission": None,
+        "history": [],
+        "subscribers": [],
+    }
+    webbuilder_sessions[session_id] = session
+
+    _webbuilder_emit_event(session, "session", {
+        "sessionId": session_id,
+        "status": "running",
+        "pendingPermission": None,
+        "previewUrl": f"/webbuilder/sessions/{session_id}/preview/index.html",
+    })
+
+    process.stdin.write((_create_webbuilder_prompt(build_spec) + "\n").encode())
+    await process.stdin.drain()
+    process.stdin.close()
+
+    async def watch_process() -> None:
+        try:
+            await asyncio.gather(
+                _webbuilder_read_stream(session_id, process.stdout, "stdout"),
+                _webbuilder_read_stream(session_id, process.stderr, "stderr"),
+            )
+            returncode = await process.wait()
+            session["status"] = "completed" if returncode == 0 else "failed"
+            _webbuilder_emit_event(session, "done", {
+                "code": returncode,
+                "status": session["status"],
+                "previewUrl": (
+                    f"/webbuilder/sessions/{session_id}/preview/index.html"
+                    if session["status"] == "completed" else None
+                ),
+            })
+        except Exception as exc:
+            session["status"] = "failed"
+            _webbuilder_emit_event(session, "session_error", {"message": str(exc)})
+        finally:
+            for queue in session["subscribers"]:
+                queue.put_nowait({"event": "stream_end", "payload": {}})
+
+    asyncio.create_task(watch_process())
+
+    return session
+
+
+def _resolve_webbuilder_preview_path(session: dict[str, Any], requested_path: str) -> Path:
+    safe_relative_path = requested_path.strip() or "index.html"
+    target = (session["run_directory"] / safe_relative_path).resolve()
+    session_root = session["run_directory"].resolve()
+    if session_root != target and session_root not in target.parents:
+        raise HTTPException(status_code=400, detail="Invalid preview path.")
+    return target
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -313,10 +507,130 @@ async def final_synthesis(body: FinalSynthesisRequest):
             raise ValueError(f"Final synthesis returned non-list: {type(build_specs)}")
 
         logger.info("Final synthesis complete: %d build specs", len(build_specs))
-        return {"status": "complete", "build_specs": build_specs}
+        return {"status": "complete", "build_specs": build_specs, "buildSpecs": build_specs}
     except Exception as exc:
         logger.exception("Final synthesis failed")
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/webbuilder/sessions")
+async def start_webbuilder_session(body: WebBuilderSingleStartRequest):
+    try:
+        session = await _start_webbuilder_session(body.item)
+        return {"sessionId": session["id"], "title": session["build_spec"]["title"]}
+    except Exception as exc:
+        logger.exception("Failed to start WebBuilder session")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/webbuilder/sessions/batch")
+async def start_webbuilder_batch(body: WebBuilderBatchStartRequest):
+    if not body.items:
+        raise HTTPException(status_code=400, detail="Body must include a non-empty 'items' array.")
+
+    started: list[dict[str, str]] = []
+    try:
+        for item in body.items:
+            session = await _start_webbuilder_session(item)
+            started.append({"sessionId": session["id"], "title": session["build_spec"]["title"]})
+        return {"sessions": started}
+    except Exception as exc:
+        logger.exception("Failed to start WebBuilder batch")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/webbuilder/sessions/{session_id}/stream")
+async def webbuilder_stream(session_id: str):
+    session = webbuilder_sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    queue: asyncio.Queue = asyncio.Queue()
+    session["subscribers"].append(queue)
+
+    # Replay all prior events so late subscribers catch up.
+    replay = list(session["history"])
+
+    async def event_generator():
+        try:
+            for item in replay:
+                yield {"event": item["event"], "data": json.dumps(item["payload"])}
+
+            while True:
+                item = await queue.get()
+                if item["event"] == "stream_end":
+                    break
+                yield {"event": item["event"], "data": json.dumps(item["payload"])}
+        finally:
+            if queue in session["subscribers"]:
+                session["subscribers"].remove(queue)
+
+    return EventSourceResponse(event_generator())
+
+
+@app.post("/webbuilder/sessions/{session_id}/permission")
+async def webbuilder_permission(session_id: str, body: WebBuilderPermissionRequest):
+    session = webbuilder_sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if session["pending_permission"] is None:
+        raise HTTPException(status_code=409, detail="No pending permission request.")
+    if body.decision not in {"approve", "deny"}:
+        raise HTTPException(status_code=400, detail="Decision must be 'approve' or 'deny'.")
+
+    process: asyncio.subprocess.Process = session["process"]
+    if process.stdin is None:
+        raise HTTPException(status_code=409, detail="Session process stdin is unavailable.")
+
+    pending = session["pending_permission"]
+    session["pending_permission"] = None
+    process.stdin.write(b"y\n" if body.decision == "approve" else b"n\n")
+    await process.stdin.drain()
+
+    _webbuilder_emit_event(session, "permission_result", {
+        "requestId": pending["id"],
+        "decision": body.decision,
+    })
+    return {"ok": True}
+
+
+@app.get("/webbuilder/sessions/{session_id}/preview")
+async def webbuilder_preview_root(session_id: str):
+    return await webbuilder_preview_file(session_id, "index.html")
+
+
+@app.get("/webbuilder/sessions/{session_id}/preview/{requested_path:path}")
+async def webbuilder_preview_file(session_id: str, requested_path: str):
+    session = webbuilder_sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    resolved = _resolve_webbuilder_preview_path(session, requested_path)
+    if resolved.exists():
+        return FileResponse(resolved)
+
+    if requested_path.endswith(".html") or requested_path == "index.html":
+        return HTMLResponse("""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Preview Pending</title>
+    <style>
+      body { margin: 0; font-family: sans-serif; background: #0b1220; color: #e6eeff; display: grid; place-items: center; min-height: 100vh; }
+      .box { text-align: center; padding: 1rem; max-width: 420px; }
+      .muted { opacity: 0.7; font-size: 0.92rem; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>Preparing preview...</h1>
+      <p class="muted">The agent is still generating files. This window will update automatically.</p>
+    </div>
+  </body>
+</html>""")
+
+    raise HTTPException(status_code=404, detail="Preview file not found.")
 
 
 @app.post("/runs/{run_id}/synthesise")

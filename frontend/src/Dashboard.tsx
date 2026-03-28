@@ -48,6 +48,22 @@ export interface BuildSpec {
   additionalContext: string;
 }
 
+interface PermissionRequest {
+  id: string;
+  message: string;
+}
+
+type PrototypeStatus = "starting" | "running" | "awaiting_approval" | "completed" | "failed";
+
+interface PrototypeSession {
+  sessionId: string;
+  title: string;
+  status: PrototypeStatus;
+  summary: string;
+  previewUrl: string;
+  pendingPermission: PermissionRequest | null;
+}
+
 interface DashboardProps {
   runId: string;
   agents: AgentConfig[];
@@ -78,6 +94,9 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
 
   // Final build specs — top 4 ideas distilled into actionable specs.
   const [buildSpecs, setBuildSpecs] = useState<BuildSpec[] | null>(null);
+  const [prototypeSessions, setPrototypeSessions] = useState<PrototypeSession[]>([]);
+  const [prototypePanelOpen, setPrototypePanelOpen] = useState(false);
+  const [prototypeStarting, setPrototypeStarting] = useState(false);
 
   // Per-agent LLM analysis results (iteration phase only).
   // Keyed by agent id. Each entry is null (pending), "loading", or the parsed analysis object.
@@ -87,6 +106,9 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
   const rightPanelRef = useRef<HTMLElement>(null);
   const dragging = useRef(false);
   const streamEndRef = useRef<HTMLDivElement>(null);
+  const prototypeStreamsRef = useRef<Record<string, EventSource>>({});
+  const prototypeRefreshTimersRef = useRef<Record<string, number>>({});
+  const prototypeStartedRef = useRef(false);
 
   // ── SSE connections ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -150,6 +172,28 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     streamEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [selected.events.length, selected.result, synthesis]);
 
+  const stripAnsi = useCallback((input: string): string => {
+    return input.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "");
+  }, []);
+
+  const summarizeOutputChunk = useCallback((text: string): string | null => {
+    const lines = stripAnsi(text)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const line = lines[i];
+      if (!line || /^(\d+\/\d+|token|at\s+\S)/i.test(line)) continue;
+      if (/permission|approve|deny/i.test(line)) return "Waiting for approval to continue.";
+      if (/write|edit|create|update|patch/i.test(line)) return "Generating and refining prototype files.";
+      if (/build|compile|test|npm|pnpm|yarn|run/i.test(line)) return "Running project commands and checks.";
+      if (/done|completed|finished/i.test(line)) return "Finalizing generated prototype output.";
+      return line.length > 140 ? `${line.slice(0, 137)}...` : line;
+    }
+    return null;
+  }, [stripAnsi]);
+
   // Auto-navigate to synthesis view once every agent is done (discovery only).
   // Iteration phase has no auto-synthesis — agents complete and results stay visible.
   useEffect(() => {
@@ -194,13 +238,194 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
         .then((res) => res.json())
         .then((data) => {
           setLlmReports((prev) => ({ ...prev, [agent.id]: data.analysis }));
-        })
+      })
         .catch((err) => {
           console.error(`LLM analysis failed for agent ${agent.id}:`, err);
           setLlmReports((prev) => ({ ...prev, [agent.id]: null }));
         });
     }
   }, [agentStates, phase, llmReports]);
+
+  const closePrototypeStream = useCallback((sessionId: string) => {
+    const stream = prototypeStreamsRef.current[sessionId];
+    if (stream) {
+      stream.close();
+      delete prototypeStreamsRef.current[sessionId];
+    }
+    const timer = prototypeRefreshTimersRef.current[sessionId];
+    if (timer) {
+      window.clearInterval(timer);
+      delete prototypeRefreshTimersRef.current[sessionId];
+    }
+  }, []);
+
+  const updatePrototypeSession = useCallback((sessionId: string, patch: Partial<PrototypeSession>) => {
+    setPrototypeSessions((prev) =>
+      prev.map((session) => (session.sessionId === sessionId ? { ...session, ...patch } : session))
+    );
+  }, []);
+
+  const startPrototypeStream = useCallback((sessionId: string) => {
+    closePrototypeStream(sessionId);
+    const es = new EventSource(`/api/webbuilder/sessions/${sessionId}/stream`);
+    prototypeStreamsRef.current[sessionId] = es;
+
+    es.addEventListener("session", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        status: string;
+        pendingPermission: PermissionRequest | null;
+        previewUrl: string | null;
+      };
+      const mappedStatus: PrototypeStatus =
+        payload.status === "completed" ? "completed"
+          : payload.status === "failed" ? "failed"
+            : payload.pendingPermission ? "awaiting_approval"
+              : "running";
+      updatePrototypeSession(sessionId, {
+        status: mappedStatus,
+        pendingPermission: payload.pendingPermission,
+        previewUrl: payload.previewUrl ?? `/api/webbuilder/sessions/${sessionId}/preview/index.html`,
+      });
+    });
+
+    es.addEventListener("output", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { text: string };
+      const summary = summarizeOutputChunk(payload.text);
+      if (summary) updatePrototypeSession(sessionId, { summary });
+    });
+
+    es.addEventListener("permission_request", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as PermissionRequest;
+      updatePrototypeSession(sessionId, {
+        pendingPermission: payload,
+        status: "awaiting_approval",
+        summary: "Waiting for approval to continue.",
+      });
+    });
+
+    es.addEventListener("permission_result", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { decision: string };
+      updatePrototypeSession(sessionId, {
+        pendingPermission: null,
+        status: "running",
+        summary: `Permission ${payload.decision.toUpperCase()} sent.`,
+      });
+    });
+
+    es.addEventListener("session_error", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as { message: string };
+      updatePrototypeSession(sessionId, {
+        status: "failed",
+        summary: `Error: ${payload.message}`,
+      });
+      closePrototypeStream(sessionId);
+    });
+
+    es.addEventListener("done", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data) as {
+        status: "completed" | "failed";
+        previewUrl: string | null;
+      };
+      updatePrototypeSession(sessionId, {
+        status: payload.status === "completed" ? "completed" : "failed",
+        pendingPermission: null,
+        previewUrl: payload.previewUrl ?? `/api/webbuilder/sessions/${sessionId}/preview/index.html`,
+        summary: payload.status === "completed"
+          ? "Prototype is ready in preview."
+          : "Prototype generation failed.",
+      });
+      closePrototypeStream(sessionId);
+    });
+
+    es.onerror = () => {
+      updatePrototypeSession(sessionId, {
+        status: "failed",
+        summary: "Stream connection interrupted.",
+      });
+      closePrototypeStream(sessionId);
+    };
+
+    prototypeRefreshTimersRef.current[sessionId] = window.setInterval(() => {
+      updatePrototypeSession(sessionId, {
+        previewUrl: `/api/webbuilder/sessions/${sessionId}/preview/index.html?t=${Date.now()}`,
+      });
+    }, 3000);
+  }, [closePrototypeStream, summarizeOutputChunk, updatePrototypeSession]);
+
+  const respondPrototypePermission = useCallback(async (sessionId: string, decision: "approve" | "deny") => {
+    try {
+      const res = await fetch(`/api/webbuilder/sessions/${sessionId}/permission`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({ detail: "Failed to send decision." }));
+        updatePrototypeSession(sessionId, { summary: `Permission error: ${payload.detail ?? payload.error ?? "Failed."}` });
+      }
+    } catch (err) {
+      updatePrototypeSession(sessionId, { summary: `Network error: ${(err as Error).message}` });
+    }
+  }, [updatePrototypeSession]);
+
+  const startPrototypeGeneration = useCallback(async (specs: BuildSpec[]) => {
+    if (!specs.length || prototypeStartedRef.current) return;
+    prototypeStartedRef.current = true;
+    setPrototypeStarting(true);
+    setPrototypePanelOpen(true);
+
+    try {
+      const res = await fetch("/api/webbuilder/sessions/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: specs }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({ detail: "Failed to start WebBuilder sessions." }));
+        throw new Error(payload.detail ?? payload.error ?? `HTTP ${res.status}`);
+      }
+
+      const data = await res.json() as { sessions: Array<{ sessionId: string; title: string }> };
+      const initial = data.sessions.map((s) => ({
+        sessionId: s.sessionId,
+        title: s.title,
+        status: "starting" as PrototypeStatus,
+        summary: "Session starting up.",
+        previewUrl: `/api/webbuilder/sessions/${s.sessionId}/preview/index.html?t=${Date.now()}`,
+        pendingPermission: null,
+      }));
+      setPrototypeSessions(initial);
+      for (const session of data.sessions) {
+        startPrototypeStream(session.sessionId);
+      }
+    } catch (err) {
+      console.error("Failed to start prototype generation:", err);
+      setPrototypeSessions([{
+        sessionId: "error",
+        title: "Prototype generation failed",
+        status: "failed",
+        summary: (err as Error).message,
+        previewUrl: "",
+        pendingPermission: null,
+      }]);
+    } finally {
+      setPrototypeStarting(false);
+    }
+  }, [startPrototypeStream]);
+
+  useEffect(() => {
+    return () => {
+      for (const id of Object.keys(prototypeStreamsRef.current)) closePrototypeStream(id);
+    };
+  }, [closePrototypeStream]);
+
+  useEffect(() => {
+    prototypeStartedRef.current = false;
+    setPrototypeSessions([]);
+    setPrototypePanelOpen(false);
+    setPrototypeStarting(false);
+    for (const id of Object.keys(prototypeStreamsRef.current)) closePrototypeStream(id);
+  }, [runId, closePrototypeStream]);
 
   // ── Drag-to-resize ────────────────────────────────────────────────────────
   const onDividerPointerDown = useCallback((e: React.PointerEvent) => {
@@ -270,7 +495,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
           tinyfish_report: typeof agent.result === "string"
             ? agent.result
             : JSON.stringify(agent.result, null, 2),
-          vc_analysis: report as Record<string, unknown>,
+          vc_analysis: report as unknown as Record<string, unknown>,
         };
       })
       .filter(Boolean);
@@ -282,13 +507,18 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     })
       .then((res) => res.json())
       .then((data) => {
-        setBuildSpecs(data.build_specs);
+        setBuildSpecs(data.buildSpecs ?? data.build_specs ?? []);
         setView("buildSpecs");
       })
       .catch((err) => {
         console.error("Final synthesis failed:", err);
       });
   }, [phase, agentStates, llmReports, iterationIdeas]);
+
+  useEffect(() => {
+    if (!buildSpecs || buildSpecs.length === 0 || prototypeStartedRef.current) return;
+    void startPrototypeGeneration(buildSpecs);
+  }, [buildSpecs, startPrototypeGeneration]);
 
   // ── Build Specs view — final output: top 4 concrete build specs ────────────
   if (view === "buildSpecs") {
@@ -301,9 +531,29 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
             {buildSpecs ? "Build Specs — Top 4" : "Generating build specs…"}
           </p>
         </header>
-        <div className="synthesis-full-panel">
+        <div className={`synthesis-full-panel buildspecs-shell ${prototypePanelOpen ? "builder-open" : "builder-collapsed"}`}>
           {buildSpecs ? (
-            <BuildSpecsView specs={buildSpecs} />
+            <>
+              <div className="buildspecs-main">
+                <BuildSpecsView specs={buildSpecs} />
+              </div>
+              <aside className={`prototype-side-panel ${prototypePanelOpen ? "open" : "closed"}`}>
+                <button
+                  className="prototype-side-toggle"
+                  onClick={() => setPrototypePanelOpen((v) => !v)}
+                  aria-expanded={prototypePanelOpen}
+                >
+                  {prototypePanelOpen ? "Hide Prototype Builder" : "Show Prototype Builder"}
+                </button>
+                {prototypePanelOpen && (
+                  <PrototypePanel
+                    sessions={prototypeSessions}
+                    isStarting={prototypeStarting}
+                    onPermission={respondPrototypePermission}
+                  />
+                )}
+              </aside>
+            </>
           ) : (
             <SynthesisLoading label="Distilling top 4 build specs…" sub="Ranking ideas by market evidence and buildability" />
           )}
@@ -818,6 +1068,66 @@ function IdeaCard({ idea }: { idea: IdeaData }) {
 
 // ── Build Specs view — final output ──────────────────────────────────────────
 // Displays the top 4 concrete build specs produced by the final synthesis LLM.
+
+function PrototypePanel({
+  sessions,
+  isStarting,
+  onPermission,
+}: {
+  sessions: PrototypeSession[];
+  isStarting: boolean;
+  onPermission: (sessionId: string, decision: "approve" | "deny") => void;
+}) {
+  return (
+    <div className="prototype-panel-content">
+      <div className="prototype-panel-head">
+        <h2>Prototype Builder</h2>
+        {isStarting && <span className="prototype-status-pill starting">Starting…</span>}
+      </div>
+      <p className="prototype-panel-sub">Generating one frontend prototype per build spec via WebBuilder.</p>
+      <div className="prototype-session-list">
+        {sessions.length === 0 ? (
+          <p className="prototype-empty">Waiting for build specs to initialize sessions.</p>
+        ) : sessions.map((session) => (
+          <section key={session.sessionId} className="prototype-session-card">
+            <div className="prototype-session-top">
+              <p className="prototype-session-title">{session.title}</p>
+              <span className={`prototype-status-pill ${session.status}`}>{formatPrototypeStatus(session.status)}</span>
+            </div>
+            <p className="prototype-session-summary">{session.summary}</p>
+            {session.pendingPermission && (
+              <div className="prototype-permission">
+                <p>{session.pendingPermission.message}</p>
+                <div className="prototype-permission-actions">
+                  <button onClick={() => onPermission(session.sessionId, "approve")}>Approve</button>
+                  <button className="deny" onClick={() => onPermission(session.sessionId, "deny")}>Deny</button>
+                </div>
+              </div>
+            )}
+            {session.previewUrl ? (
+              <iframe
+                src={session.previewUrl}
+                title={`${session.title} prototype preview`}
+                className="prototype-preview"
+              />
+            ) : null}
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatPrototypeStatus(status: PrototypeStatus): string {
+  switch (status) {
+    case "starting": return "Starting";
+    case "running": return "Running";
+    case "awaiting_approval": return "Needs Approval";
+    case "completed": return "Completed";
+    case "failed": return "Failed";
+    default: return "Unknown";
+  }
+}
 
 const BUILD_SPEC_SECTIONS: { key: keyof BuildSpec; label: string }[] = [
   { key: "whatToBuild",       label: "WHAT TO BUILD" },
