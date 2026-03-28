@@ -15,7 +15,8 @@ from sse_starlette.sse import EventSourceResponse
 from prompts import (
     DECOMPOSITION_SYSTEM_PROMPT,
     SYNTHESIS_SYSTEM_PROMPT,
-    ITERATION_GOAL_TEMPLATE,
+    TINYFISH_ITERATION_GOAL_TEMPLATE,
+    LLM_ITERATION_SYSTEM_PROMPT,
     ITERATION_DEFAULT_URL,
     NUM_AGENTS,
 )
@@ -120,10 +121,10 @@ async def health() -> dict:
 
 @app.get("/iteration-template")
 async def get_iteration_template() -> dict:
-    """Return the iteration prompt template and default URL so the frontend
+    """Return the iteration prompt templates and default URL so the frontend
     can build TinyFish tasks without hardcoding prompts."""
     return {
-        "goal_template": ITERATION_GOAL_TEMPLATE,
+        "goal_template": TINYFISH_ITERATION_GOAL_TEMPLATE,
         "default_url": ITERATION_DEFAULT_URL,
     }
 
