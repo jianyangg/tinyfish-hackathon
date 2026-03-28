@@ -23,18 +23,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: transparent;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
   font-size: 16px;
   cursor: pointer;
-  color: var(--ink);
-  transition: background 0.15s;
+  color: var(--white);
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 .back-btn:hover {
-  background: var(--bg);
+  background: rgba(255, 103, 1, 0.15);
+  border-color: rgba(255, 103, 1, 0.3);
+  color: var(--orange-primary);
+  transform: translateX(-4px);
 }
 
 .wordmark.compact {
@@ -295,6 +298,7 @@
   /* Clamp to 3 lines */
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   margin: 0;

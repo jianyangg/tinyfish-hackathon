@@ -125,7 +125,20 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
           const event: AgentEvent = JSON.parse(msg.data);
           console.log(`[agent ${agentIdx}] event:`, event.type, event);
 
-          if (event.type === "DONE") { es.close(); return; }
+          if (event.type === "DONE") {
+            // Mark non-complete agents as "error" so allDone checks resolve.
+            // This covers agents cancelled by "Skip remaining" or force-synthesis,
+            // where the backend sends DONE without a preceding COMPLETE event.
+            setAgentStates((prev) => {
+              const next = [...prev];
+              if (next[agentIdx] && next[agentIdx].status !== "complete") {
+                next[agentIdx] = { ...next[agentIdx], status: "error" };
+              }
+              return next;
+            });
+            es.close();
+            return;
+          }
 
           if (event.type === "SYNTHESIS_COMPLETE") {
             setSynthesis(event.result as string);
@@ -205,6 +218,28 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
       setView("synthesis");
     }
   }, [agentStates, phase]);
+
+  // Poll for synthesis result when on the synthesis view without a result.
+  // The SYNTHESIS_COMPLETE SSE event is broadcast AFTER all agents' DONE events,
+  // which means all EventSources are already closed by the time it arrives.
+  // Polling the dedicated endpoint is the reliable fallback.
+  useEffect(() => {
+    if (view !== "synthesis" || synthesis !== null) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/runs/${runId}/synthesis`);
+        const data = await res.json();
+        if (data.status === "complete") {
+          setSynthesis(data.result);
+        }
+      } catch {
+        // Network error — keep polling
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [view, synthesis, runId]);
 
   // Auto-trigger LLM analysis when an iteration agent completes.
   // Each completed agent's TinyFish result is sent to POST /api/analyse-idea,
@@ -525,7 +560,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     return (
       <div className="dashboard">
         <header className="dashboard-header">
-          <button className="back-btn" onClick={() => setView("agents")} aria-label="Back to agents">←</button>
+          <button className="back-btn" onClick={() => setView("agents")} aria-label="Back to agents"><ArrowLeftIcon /></button>
           <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
           <p className="header-prompt synthesis-header-label">
             {buildSpecs ? "Build Specs — Top 4" : "Generating build specs…"}
@@ -567,7 +602,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     return (
       <div className="dashboard">
         <header className="dashboard-header">
-          <button className="back-btn" onClick={() => setView("agents")} aria-label="Back">←</button>
+          <button className="back-btn" onClick={() => setView("agents")} aria-label="Back"><ArrowLeftIcon /></button>
           <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
           <p className="header-prompt synthesis-header-label">
             {synthesis ? "Synthesised — launching research…" : "Synthesising…"}
@@ -603,7 +638,7 @@ export default function Dashboard({ runId, agents, prompt, phase, onBack, onIter
     <div className="dashboard">
       {/* ── Header ── */}
       <header className="dashboard-header">
-        <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
+        <button className="back-btn" onClick={onBack} aria-label="Back"><ArrowLeftIcon /></button>
         <div className="wordmark compact"><YCIcon /><span style={{ color: 'var(--orange-primary)', fontWeight: 'bold' }}>yc-idea-implanter</span></div>
         <p className="header-prompt" title={phase === "iteration" ? "Market Research" : prompt}>
           {phase === "iteration"
@@ -852,6 +887,15 @@ function GridIcon() {
   );
 }
 
+function ArrowLeftIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="19" y1="12" x2="5" y2="12" />
+      <polyline points="12 19 5 12 12 5" />
+    </svg>
+  );
+}
+
 // ── LLM Analysis renderer ─────────────────────────────────────────────────────
 // Renders the 6-metric Brutal VC Partner verdict in the stream panel.
 
@@ -965,7 +1009,7 @@ function formatKey(key: string): string {
 
 function SynthesisLoading({
   label = "Aggregating VC thoughts…",
-  sub = "Combining findings and drafting up to 8 unicorn ideas",
+  sub = "Combining findings and selecting the strongest idea",
 }: {
   label?: string;
   sub?: string;

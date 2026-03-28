@@ -223,6 +223,7 @@ export default function App() {
   if (view === "dashboard") {
     return (
       <Dashboard
+        key={runId}
         runId={runId}
         agents={agents}
         prompt={DISCOVERY_PROMPT}
@@ -248,8 +249,8 @@ export default function App() {
             {phase === "discovery" ? (
               <>
                 <LoadingStepIndicator
-                  label="Channeling Paul Graham"
-                  detail="Scraping every YC wishlist ever published…"
+                  label="Preparation instructions"
+                  detail="Figuring out what to tell each TinyFish agent..."
                   active={loadingStep === "decomposing"}
                   done={loadingStep === "spawning"}
                 />
