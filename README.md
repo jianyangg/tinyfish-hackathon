@@ -1,4 +1,4 @@
-# GoTouchGrass
+# 🍃 GoTouchGrass
 GoTouchGrass is an autonomous venture pipeline that eliminates "Analysis Paralysis" for founders who constantly pivot. It replaces months of "pivoting" and "ideating" with an agentic assembly line that finds real pain points from validated sources, validates them with brutal logic, and ships functional MVPs.
 
 # The Problem
